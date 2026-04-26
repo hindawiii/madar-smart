@@ -523,16 +523,24 @@ const Index = () => {
 
 const Header = ({
   credits,
+  user,
+  profileName,
   darkMode,
   setDarkMode,
   cleanCache,
   notify,
+  signInWithGoogle,
+  signOut,
 }: {
   credits: string;
+  user: AuthUser | null;
+  profileName: string;
   darkMode: boolean;
   setDarkMode: (value: boolean) => void;
   cleanCache: () => void;
   notify: (title: string, description: string) => void;
+  signInWithGoogle: () => void;
+  signOut: () => void;
 }) => (
   <header className="glass-panel sticky top-4 z-30 flex items-center justify-between rounded-2xl px-4 py-3">
     <div className="flex items-center gap-3">
@@ -564,8 +572,21 @@ const Header = ({
             <DrawerDescription>تحكم آمن في الحساب، المظهر، والبيانات المؤقتة.</DrawerDescription>
           </DrawerHeader>
           <div className="space-y-3 px-4 pb-4">
-            <SettingsRow icon={Chrome} title="تسجيل الدخول عبر Google" description="مسار اجتماعي جاهز للربط الآمن." action={() => notify("تسجيل Google", "تم تجهيز مسار تسجيل الدخول الاجتماعي للتفعيل الخلفي.")} />
-            <SettingsRow icon={Facebook} title="تسجيل الدخول عبر Facebook" description="يمكن ربط المزود عند تفعيل الهوية." action={() => notify("تسجيل Facebook", "سيتم ربط المزود عند تفعيل خدمة الهوية.")} />
+            <div className="rounded-2xl border border-border/50 bg-secondary/30 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <User className="h-5 w-5 text-primary" />
+                <div className="min-w-0 flex-1 text-right">
+                  <p className="truncate font-bold">{profileName}</p>
+                  <p className="text-xs text-muted-foreground">{user ? "متصل ومحفوظ في السحابة" : "سجّل الدخول لحفظ الرصيد"}</p>
+                </div>
+              </div>
+            </div>
+            {user ? (
+              <Button variant="glass" className="w-full justify-between" onClick={signOut}><LogOut className="h-4 w-4" /> تسجيل الخروج</Button>
+            ) : (
+              <SettingsRow icon={Chrome} title="تسجيل الدخول عبر Google" description="يحفظ الأرصدة وبيانات الملفات بشكل آمن." action={signInWithGoogle} />
+            )}
+            <SettingsRow icon={Facebook} title="تسجيل الدخول عبر Facebook" description="غير متاح حالياً؛ استخدم Google لحفظ البيانات فوراً." action={() => notify("تسجيل Facebook", "تسجيل Facebook غير مفعّل حالياً، ويمكنك استخدام Google لحفظ بياناتك الآن.")} />
             <div className="rounded-2xl border border-border/50 bg-secondary/30 p-4">
               <div className="flex items-center justify-between">
                 <Switch checked={darkMode} onCheckedChange={setDarkMode} />
