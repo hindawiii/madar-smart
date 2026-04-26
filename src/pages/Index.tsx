@@ -911,8 +911,15 @@ const SmartShare = ({
   downloadByCode,
   activateWebRtc,
   closeWebRtc,
+  openScanner,
+  closeScanner,
+  scannerOpen,
+  scannerVideoRef,
   localPairCode,
   webrtcStatus,
+  pairByCode,
+  connectedDevices,
+  sendToDevice,
 }: {
   notify: (title: string, description: string) => void;
   expiry: string;
@@ -926,8 +933,15 @@ const SmartShare = ({
   downloadByCode: () => void;
   activateWebRtc: (mode: "send" | "receive") => void;
   closeWebRtc: () => void;
+  openScanner: () => void;
+  closeScanner: () => void;
+  scannerOpen: boolean;
+  scannerVideoRef: React.RefObject<HTMLVideoElement>;
   localPairCode: string;
   webrtcStatus: string;
+  pairByCode: () => void;
+  connectedDevices: ConnectedDevice[];
+  sendToDevice: (deviceName: string) => void;
 }) => (
   <div className="space-y-5">
     <SectionTitle icon={Signal} title="الشير العالمي" subtitle="تصميم مقسوم بين المشاركة السحابية بالكود والنقل المحلي السريع عبر Wi‑Fi دون إنترنت." />
