@@ -612,50 +612,35 @@ const Header = ({
 
 const AppShell = ({ children }: { children: React.ReactNode }) => <section className="glass-panel min-h-[620px] rounded-3xl p-3 sm:p-5">{children}</section>;
 
-const HomeSection = ({ credits, rewardAd, setActiveSection }: { credits: string; rewardAd: () => void; setActiveSection: (section: Section) => void }) => (
-  <div className="grid gap-6 lg:grid-cols-[0.95fr_1.05fr]">
-    <section className="glass-panel rounded-3xl p-6 sm:p-8">
-      <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-border/60 bg-secondary/40 px-3 py-2 text-xs text-muted-foreground">
-        <BadgeCheck className="h-4 w-4 text-primary" /> واجهة عربية فصحى بالكامل
-      </div>
-      <h2 className="text-4xl font-black leading-tight sm:text-5xl">
-        مدار <span className="gold-text">للاتصال والتحميل والشير</span>
-      </h2>
-      <p className="mt-4 text-sm leading-7 text-muted-foreground">
-        تجربة فاخرة تجمع مكالمة وهمية واقعية، مستشعر تحميل ذكي، ومشاركة ملفات محلية أو سحابية ضمن تصميم زجاجي داكن معدّ للتثبيت على الشاشة الرئيسية.
-      </p>
-      <div className="mt-6 grid gap-3 sm:grid-cols-3">
-        <Metric icon={Sparkles} label="الرصيد الحالي" value={credits} />
-        <Metric icon={CheckCircle2} label="حالة التطبيق" value="جاهز" />
-        <Metric icon={Wifi} label="الشير" value="مجاني" />
-      </div>
-    </section>
+const HomeSection = ({ credits, rewardAd }: { credits: string; rewardAd: () => void }) => (
+  <section className="flex min-h-[620px] flex-col justify-between rounded-3xl border border-border/50 bg-gradient-glass p-5 shadow-glass sm:p-8">
+    <div className="mx-auto w-full max-w-xl rounded-3xl border border-border/50 bg-secondary/30 p-6 text-center shadow-gold">
+      <Gift className="mx-auto mb-4 h-12 w-12 text-primary" />
+      <p className="mb-4 text-sm font-bold text-muted-foreground">الرصيد الحالي: {credits}</p>
+      <Button variant="gold" size="lg" className="w-full" onClick={rewardAd}>
+        <Gift className="h-5 w-5" /> شاهد إعلاناً للحصول على 5 أرصدة إضافية
+      </Button>
+    </div>
 
-    <section className="space-y-4">
-      <div className="grid gap-4 md:grid-cols-2">
-        <InfoCard icon={Info} title="معلومات التطبيق" items={["واجهة RTL كاملة", "تخزين أرصدة محلي", "قابلية تحويل إلى Capacitor", "تجهيز PWA للاختصارات"]} />
-        <InfoCard icon={Zap} title="أبرز الميزات" items={["ملء شاشة للمكالمات", "كشف جودة ديناميكي", "كود مشاركة سداسي", "WebRTC للنقل المحلي"]} />
+    <div className="rounded-3xl border border-border/50 bg-background/40 p-4">
+      <div className="mb-3 flex items-center justify-between">
+        <span className="font-black">مشاركة التطبيق</span>
+        <Share2 className="h-5 w-5 text-primary" />
       </div>
-      <div className="rounded-3xl border border-border/50 bg-gradient-glass p-6 shadow-gold">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-sm text-muted-foreground">نظام المكافآت</p>
-            <h3 className="mt-1 text-2xl font-black">شاهد إعلانًا واكسب 5 أرصدة</h3>
-          </div>
-          <Gift className="h-9 w-9 text-primary" />
-        </div>
-        <p className="mt-3 text-sm leading-7 text-muted-foreground">تُستخدم الأرصدة في المكالمات والتحميل، بينما يبقى قسم الشير مجانياً بالكامل.</p>
-        <Button variant="gold" size="lg" className="mt-5 w-full" onClick={rewardAd}>
-          <Gift className="h-5 w-5" /> شاهد إعلانًا
-        </Button>
+      <div className="grid grid-cols-4 gap-3">
+        {[
+          { label: "WhatsApp", icon: MessageCircle },
+          { label: "Facebook", icon: Facebook },
+          { label: "Instagram", icon: Instagram },
+          { label: "Twitter", icon: Twitter },
+        ].map((item) => (
+          <Button key={item.label} variant="glass" size="icon" aria-label={`مشاركة عبر ${item.label}`} onClick={() => navigator.share?.({ title: "مدار", text: "تطبيق مدار", url: window.location.origin })}>
+            <item.icon className="h-5 w-5" />
+          </Button>
+        ))}
       </div>
-      <div className="grid gap-3 sm:grid-cols-3">
-        <Button variant="glass" onClick={() => setActiveSection("call")}><PhoneCall className="h-4 w-4" /> المكالمة</Button>
-        <Button variant="glass" onClick={() => setActiveSection("download")}><Download className="h-4 w-4" /> التحميل</Button>
-        <Button variant="glass" onClick={() => setActiveSection("share")}><Share2 className="h-4 w-4" /> الشير</Button>
-      </div>
-    </section>
-  </div>
+    </div>
+  </section>
 );
 
 const FloatingNavigation = ({ activeSection, setActiveSection, activeIndex }: { activeSection: Section; setActiveSection: (section: Section) => void; activeIndex: number }) => (
