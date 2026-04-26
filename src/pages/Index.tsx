@@ -4,6 +4,7 @@ import {
   BellRing,
   Bluetooth,
   CalendarClock,
+  Camera,
   CheckCircle2,
   Chrome,
   Cloud,
@@ -25,7 +26,9 @@ import {
   KeyRound,
   Link2,
   LogIn,
+  LogOut,
   Maximize2,
+  MessageCircle,
   Moon,
   MoreVertical,
   Music,
@@ -45,9 +48,12 @@ import {
   Sparkles,
   Timer,
   Trash2,
+  Twitter,
   UploadCloud,
+  User,
   Vibrate,
   Wifi,
+  X,
   Youtube,
   Zap,
 } from "lucide-react";
@@ -66,12 +72,16 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
+import { lovable } from "@/integrations/lovable";
+import type { User as AuthUser } from "@supabase/supabase-js";
 
 type Section = "home" | "call" | "download" | "share";
 type PaidAction = "call" | "download";
 type Platform = "android" | "ios";
 type MediaFormat = { kind: "فيديو" | "صوت"; quality: string; sizeMb: number; extension: "mp4" | "mp3"; icon: typeof FileVideo };
 type SharedFileRecord = { code: string; name: string; size: number; expiry: string; createdAt: number; url: string };
+type ConnectedDevice = { id: string; name: string; status: string };
 
 const CREDIT_COST: Record<PaidAction, number> = { call: 1, download: 1 };
 const SHARE_STORAGE_KEY = "madar_share_records";
