@@ -945,6 +945,13 @@ const SmartShare = ({
 }) => (
   <div className="space-y-5">
     <SectionTitle icon={Signal} title="الشير العالمي" subtitle="تصميم مقسوم بين المشاركة السحابية بالكود والنقل المحلي السريع عبر Wi‑Fi دون إنترنت." />
+    <label className="flex min-h-36 cursor-pointer flex-col items-center justify-center rounded-3xl border border-dashed border-primary/60 bg-background/40 p-5 text-center transition-colors hover:bg-secondary/50">
+      <UploadCloud className="mb-3 h-9 w-9 text-primary" />
+      <span className="text-lg font-black">صندوق اختيار الملفات</span>
+      <span className="mt-2 text-sm text-muted-foreground">{sharedFile ? `${sharedFile.name} • ${formatFileSize(sharedFile.size)}` : "اختر ملفاً قبل الإرسال أو إنشاء كود سحابي"}</span>
+      <input type="file" className="sr-only" onChange={(event) => setSharedFile(event.target.files?.[0] ?? null)} />
+    </label>
+
     <div className="grid gap-5 lg:grid-cols-2">
       <div className="rounded-3xl border border-border/50 bg-gradient-glass p-5 shadow-glass">
         <div className="mb-5 flex items-start justify-between gap-4">
@@ -954,12 +961,7 @@ const SmartShare = ({
           </div>
           <Cloud className="h-9 w-9 text-primary" />
         </div>
-        <label className="flex min-h-32 cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-border/70 bg-background/40 p-4 text-center transition-colors hover:bg-secondary/50">
-          <UploadCloud className="mb-3 h-8 w-8 text-primary" />
-          <span className="font-bold">{sharedFile ? sharedFile.name : "اختر ملفاً للمشاركة"}</span>
-          {sharedFile && <span className="mt-1 text-xs text-muted-foreground">{formatFileSize(sharedFile.size)}</span>}
-          <input type="file" className="sr-only" onChange={(event) => setSharedFile(event.target.files?.[0] ?? null)} />
-        </label>
+        <div className="rounded-2xl border border-border/50 bg-background/40 p-4 text-sm text-muted-foreground">الملف المحدد: <span className="font-bold text-foreground">{sharedFile ? sharedFile.name : "لم يتم اختيار ملف"}</span></div>
         <select value={expiry} onChange={(event) => setExpiry(event.target.value)} className="mt-4 h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring">
           <option>24 ساعة</option>
           <option>أسبوع واحد</option>
@@ -987,16 +989,40 @@ const SmartShare = ({
         <div className="grid gap-3 sm:grid-cols-2">
           <LargeAction icon={Radio} label="تفعيل الإرسال" onClick={() => activateWebRtc("send")} />
           <LargeAction icon={Bluetooth} label="تفعيل الاستلام" onClick={() => activateWebRtc("receive")} />
-          <LargeAction icon={QrCode} label="ماسح الباركود" onClick={() => notify("ماسح الباركود", "تم تجهيز ماسح الباركود لقراءة أكواد الاقتران المحلية.")} />
+          <LargeAction icon={QrCode} label="ماسح الباركود" onClick={openScanner} />
           <LargeAction icon={Share2} label="إرسال كود الاقتران" onClick={() => notify("كود الاقتران", localPairCode ? `تم إرسال الكود ${localPairCode} للجهاز الآخر.` : "فعّل الإرسال أو الاستلام أولاً لإنشاء كود.")} />
+        </div>
+        <div className="mt-4 flex gap-2">
+          <Input inputMode="numeric" maxLength={6} value={receiverCode} onChange={(event) => setReceiverCode(event.target.value)} placeholder="أدخل كود الاقتران" className="bg-background/70 text-center" dir="ltr" />
+          <Button variant="glass" onClick={pairByCode}><KeyRound className="h-4 w-4" /> اقتران</Button>
         </div>
         <div className="mt-5 grid gap-3 sm:grid-cols-2">
           <StatusPill icon={Headphones} label="حالة WebRTC" value={webrtcStatus} />
           <StatusPill icon={KeyRound} label="كود الاقتران" value={localPairCode || "غير منشأ"} />
         </div>
         <Button variant="glass" className="mt-4 w-full" onClick={closeWebRtc}>إيقاف قناة النقل</Button>
+        <div className="mt-5 rounded-2xl border border-border/50 bg-background/40 p-4">
+          <h4 className="mb-3 font-black">الأجهزة المتصلة حالياً</h4>
+          <div className="space-y-2">
+            {connectedDevices.map((device) => (
+              <div key={device.id} className="flex items-center justify-between gap-3 rounded-xl bg-secondary/40 p-3">
+                <div><p className="font-bold">{device.name}</p><p className="text-xs text-muted-foreground">{device.status}</p></div>
+                <Button variant="gold" size="sm" onClick={() => sendToDevice(device.name)}>إرسال</Button>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     </div>
+    {scannerOpen && (
+      <div className="fixed inset-0 z-50 grid place-items-center bg-background/85 p-4 backdrop-blur-xl">
+        <div className="w-full max-w-md rounded-3xl border border-border/70 bg-popover p-4 shadow-glass">
+          <div className="mb-3 flex items-center justify-between"><Button variant="glass" size="icon" onClick={closeScanner} aria-label="إغلاق الماسح"><X /></Button><h3 className="font-black">ماسح كود الاقتران</h3><Camera className="h-5 w-5 text-primary" /></div>
+          <video ref={scannerVideoRef} className="aspect-video w-full rounded-2xl border border-primary/40 bg-secondary object-cover" playsInline muted />
+          <Button variant="gold" className="mt-4 w-full" onClick={() => { setReceiverCode(localPairCode || createCode()); closeScanner(); notify("تمت قراءة الكود", "تم إدراج كود الاقتران من الكاميرا بنجاح."); }}>محاكاة قراءة الكود</Button>
+        </div>
+      </div>
+    )}
   </div>
 );
 
