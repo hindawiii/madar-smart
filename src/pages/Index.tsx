@@ -440,10 +440,10 @@ const Index = () => {
     <main className="min-h-screen overflow-hidden bg-orbit font-cairo text-foreground">
       <div className="pointer-events-none fixed inset-0 orbit-grid opacity-60" />
       <div className="relative mx-auto flex min-h-screen w-full max-w-7xl flex-col px-4 pb-28 pt-4 sm:px-6 lg:px-8">
-        <Header credits={creditLabel} darkMode={darkMode} setDarkMode={setDarkMode} cleanCache={cleanCache} notify={notify} />
+        <Header credits={creditLabel} user={user} profileName={profileName} darkMode={darkMode} setDarkMode={setDarkMode} cleanCache={cleanCache} notify={notify} signInWithGoogle={signInWithGoogle} signOut={signOut} />
 
         <section className="flex-1 py-6">
-          {activeSection === "home" && <HomeSection credits={creditLabel} rewardAd={rewardAd} setActiveSection={setActiveSection} />}
+          {activeSection === "home" && <HomeSection credits={creditLabel} rewardAd={rewardAd} />}
           {activeSection === "call" && (
             <AppShell>
               <FakeCallDashboard
@@ -501,8 +501,15 @@ const Index = () => {
                 downloadByCode={downloadByCode}
                 activateWebRtc={activateWebRtc}
                 closeWebRtc={closeWebRtc}
+                openScanner={openScanner}
+                closeScanner={closeScanner}
+                scannerOpen={scannerOpen}
+                scannerVideoRef={scannerVideoRef}
                 localPairCode={localPairCode}
                 webrtcStatus={webrtcStatus}
+                pairByCode={pairByCode}
+                connectedDevices={connectedDevices}
+                sendToDevice={sendToDevice}
               />
             </AppShell>
           )}
