@@ -1,0 +1,22 @@
+{
+  "name": "مدار - Madar",
+  "short_name": "مدار",
+  "description": "تطبيق عربي فاخر للمكالمة الوهمية والتحميل الذكي والشير.",
+  "dir": "rtl",
+  "lang": "ar",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#07090f",
+  "theme_color": "#D4AF37",
+  "icons": [
+    { "src": "/icon-192.svg", "sizes": "192x192", "type": "image/svg+xml", "purpose": "any maskable" },
+    { "src": "/icon-512.svg", "sizes": "512x512", "type": "image/svg+xml", "purpose": "any maskable" }
+  ],
+  "shortcuts": [
+    { "name": "مكالمة وهمية", "short_name": "مكالمة", "url": "/?section=call", "icons": [{ "src": "/icon-192.svg", "sizes": "192x192" }] },
+    { "name": "التحميل الذكي", "short_name": "تحميل", "url": "/?section=download", "icons": [{ "src": "/icon-192.svg", "sizes": "192x192" }] },
+    { "name": "الشير", "short_name": "الشير", "url": "/?section=share", "icons": [{ "src": "/icon-192.svg", "sizes": "192x192" }] }
+  ]
+}
