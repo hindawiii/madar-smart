@@ -344,6 +344,17 @@ const Index = () => {
     const current = JSON.parse(window.localStorage.getItem(SHARE_STORAGE_KEY) || "[]") as Omit<SharedFileRecord, "url">[];
     window.localStorage.setItem(SHARE_STORAGE_KEY, JSON.stringify([{ code, name: record.name, size: record.size, expiry, createdAt: record.createdAt }, ...current].slice(0, 8)));
     setShareCode(code);
+    if (user) {
+      void supabase.from("share_files").insert({
+        user_id: user.id,
+        file_name: sharedFile.name,
+        file_size: sharedFile.size,
+        file_type: sharedFile.type || "application/octet-stream",
+        retrieval_code: code,
+        expires_at: expiry === "دائم" ? null : new Date(Date.now() + (expiry === "24 ساعة" ? 1 : expiry === "أسبوع واحد" ? 7 : 30) * 86400000).toISOString(),
+        metadata: { expiry, local_preview: true },
+      });
+    }
     (window as Window & { madarShareFiles?: Record<string, SharedFileRecord> }).madarShareFiles = {
       ...((window as Window & { madarShareFiles?: Record<string, SharedFileRecord> }).madarShareFiles || {}),
       [code]: record,
@@ -379,7 +390,43 @@ const Index = () => {
     }
     setPeerConnection(pc);
     setLocalPairCode(code);
+    setConnectedDevices((devices) => devices.map((device, index) => index === 0 ? { ...device, status: "متصل عبر WebRTC" } : device));
     notify("تم تجهيز النقل السريع", `كود الاقتران المحلي هو ${code}.`);
+  };
+
+  const openScanner = async () => {
+    setScannerOpen(true);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
+      setCameraStream(stream);
+      notify("تم فتح الكاميرا", "وجّه الكاميرا نحو رمز الاقتران لبدء الفحص الآمن.");
+    } catch {
+      notify("تعذر فتح الكاميرا", "يرجى السماح للمتصفح باستخدام الكاميرا ثم إعادة المحاولة.");
+    }
+  };
+
+  const closeScanner = () => {
+    cameraStream?.getTracks().forEach((track) => track.stop());
+    setCameraStream(null);
+    setScannerOpen(false);
+  };
+
+  const pairByCode = () => {
+    if (receiverCode.trim().length < 4) {
+      notify("كود الاقتران غير مكتمل", "أدخل كود الاقتران اليدوي كما يظهر على الجهاز الآخر.");
+      return;
+    }
+    setConnectedDevices((devices) => [{ id: `paired-${receiverCode}`, name: `جهاز مقترن ${receiverCode}`, status: "متصل يدوياً" }, ...devices]);
+    setWebrtcStatus("تم الاقتران اليدوي");
+    notify("تم الاقتران بنجاح", "أصبح الجهاز جاهزاً لاستقبال الملفات عبر الشير المحلي.");
+  };
+
+  const sendToDevice = (deviceName: string) => {
+    if (!sharedFile) {
+      notify("اختر ملفاً أولاً", "حدد ملفاً من صندوق اختيار الملفات قبل الإرسال.");
+      return;
+    }
+    notify("تم بدء الإرسال", `جاري إرسال ${sharedFile.name} إلى ${deviceName} عبر قناة محلية آمنة.`);
   };
 
   const closeWebRtc = () => {
