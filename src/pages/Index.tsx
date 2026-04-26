@@ -156,6 +156,8 @@ const Index = () => {
   const { toast } = useToast();
   const [activeSection, setActiveSection] = useState<Section>("home");
   const [credits, setCredits] = useState(() => storageNumber("madar_credits", 3));
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [profileName, setProfileName] = useState("زائر مدار");
   const [darkMode, setDarkMode] = useState(true);
   const [wifiOnly, setWifiOnly] = useState(true);
   const [platform, setPlatform] = useState<Platform>("android");
@@ -174,9 +176,16 @@ const Index = () => {
   const [shareCode, setShareCode] = useState("");
   const [receiverCode, setReceiverCode] = useState("");
   const [localPairCode, setLocalPairCode] = useState("");
+  const [scannerOpen, setScannerOpen] = useState(false);
+  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
   const [webrtcStatus, setWebrtcStatus] = useState("غير متصل");
   const [peerConnection, setPeerConnection] = useState<RTCPeerConnection | null>(null);
+  const [connectedDevices, setConnectedDevices] = useState<ConnectedDevice[]>([
+    { id: "nearby-1", name: "هاتف قريب", status: "جاهز للاقتران" },
+    { id: "nearby-2", name: "حاسوب العمل", status: "تم العثور عليه" },
+  ]);
   const callFrameRef = useRef<HTMLDivElement>(null);
+  const scannerVideoRef = useRef<HTMLVideoElement>(null);
 
   const detectedFormats = useMemo(() => detectFormats(detectedLink), [detectedLink]);
   const activeIndex = navItems.findIndex((item) => item.id === activeSection);
@@ -184,7 +193,34 @@ const Index = () => {
 
   useEffect(() => {
     window.localStorage.setItem("madar_credits", String(credits));
+    if (user) {
+      supabase.from("user_credits").upsert({ user_id: user.id, credits, trials_used: Math.max(0, 3 - credits) }).then(({ error }) => {
+        if (error) console.error("تعذر حفظ الرصيد", error);
+      });
+    }
   }, [credits]);
+
+  useEffect(() => {
+    const initAuth = async () => {
+      const { data } = await supabase.auth.getSession();
+      const currentUser = data.session?.user ?? null;
+      setUser(currentUser);
+      if (currentUser) await loadCloudUserData(currentUser);
+    };
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      const currentUser = session?.user ?? null;
+      setUser(currentUser);
+      if (currentUser) setTimeout(() => void loadCloudUserData(currentUser), 0);
+    });
+    void initAuth();
+    return () => listener.subscription.unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (!scannerOpen || !cameraStream || !scannerVideoRef.current) return;
+    scannerVideoRef.current.srcObject = cameraStream;
+    void scannerVideoRef.current.play();
+  }, [scannerOpen, cameraStream]);
 
   useEffect(() => {
     setSelectedFormat(detectedFormats[0] ?? null);
@@ -192,6 +228,26 @@ const Index = () => {
   }, [detectedFormats]);
 
   const notify = (title: string, description: string) => toast({ title, description });
+
+  const loadCloudUserData = async (currentUser: AuthUser) => {
+    const fallbackName = currentUser.user_metadata?.full_name || currentUser.user_metadata?.name || currentUser.email || "مستخدم مدار";
+    const { data: profile } = await supabase.from("profiles").select("display_name").eq("user_id", currentUser.id).maybeSingle();
+    const { data: cloudCredits } = await supabase.from("user_credits").select("credits").eq("user_id", currentUser.id).maybeSingle();
+    setProfileName(profile?.display_name || fallbackName);
+    if (typeof cloudCredits?.credits === "number") setCredits(cloudCredits.credits);
+  };
+
+  const signInWithGoogle = async () => {
+    const { error } = await lovable.auth.signInWithOAuth("google", { redirect_uri: window.location.origin });
+    if (error) notify("تعذر تسجيل الدخول", "لم يكتمل اتصال Google، يرجى المحاولة مرة أخرى.");
+  };
+
+  const signOut = async () => {
+    await supabase.auth.signOut();
+    setUser(null);
+    setProfileName("زائر مدار");
+    notify("تم تسجيل الخروج", "سيبقى الرصيد المحلي متاحاً حتى تسجيل الدخول مرة أخرى.");
+  };
 
   const spendCredit = (action: PaidAction, successMessage: string) => {
     const cost = CREDIT_COST[action];
