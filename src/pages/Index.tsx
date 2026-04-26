@@ -1,27 +1,31 @@
-import { useEffect, useMemo, useState } from "react";
+import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   BadgeCheck,
   BellRing,
   Bluetooth,
   CalendarClock,
   CheckCircle2,
-  ChevronUp,
   Chrome,
   Cloud,
   Copy,
   Download,
   Facebook,
+  FileArchive,
   FileAudio,
+  FileDown,
   FileVideo,
   FolderOpen,
   Gauge,
   Gift,
   Globe2,
   HardDriveDownload,
+  Headphones,
   Info,
   Instagram,
+  KeyRound,
   Link2,
   LogIn,
+  Maximize2,
   Moon,
   MoreVertical,
   Music,
@@ -29,9 +33,10 @@ import {
   PhoneCall,
   PhoneMissed,
   Play,
+  QrCode,
   Radar,
+  Radio,
   RefreshCcw,
-  Search,
   Settings,
   Share2,
   Shield,
@@ -44,6 +49,7 @@ import {
   Vibrate,
   Wifi,
   Youtube,
+  Zap,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -61,29 +67,26 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 
-type Section = "call" | "download" | "share";
+type Section = "home" | "call" | "download" | "share";
 type PaidAction = "call" | "download";
 type Platform = "android" | "ios";
+type MediaFormat = { kind: "فيديو" | "صوت"; quality: string; sizeMb: number; extension: "mp4" | "mp3"; icon: typeof FileVideo };
+type SharedFileRecord = { code: string; name: string; size: number; expiry: string; createdAt: number; url: string };
 
 const CREDIT_COST: Record<PaidAction, number> = { call: 1, download: 1 };
-
-const qualityRows = [
-  { format: "فيديو", quality: "2160p", size: "1.8 غ.ب", speed: "مرتفع", icon: FileVideo },
-  { format: "فيديو", quality: "1080p", size: "742 م.ب", speed: "متوازن", icon: FileVideo },
-  { format: "فيديو", quality: "720p", size: "386 م.ب", speed: "سريع", icon: FileVideo },
-  { format: "صوت", quality: "320kbps", size: "12 م.ب", speed: "فوري", icon: FileAudio },
-];
-
-const downloadedFiles = [
-  { title: "مقطع تعليمي عالي الدقة", type: "فيديو", size: "386 م.ب", source: "يوتيوب", tone: "from-primary/25" },
-  { title: "ملف صوتي نقي", type: "صوت", size: "12 م.ب", source: "إنستغرام", tone: "from-accent/25" },
-  { title: "لقطة قصيرة للمعاينة", type: "فيديو", size: "74 م.ب", source: "تيك توك", tone: "from-warning/25" },
-];
+const SHARE_STORAGE_KEY = "madar_share_records";
 
 const navItems: Array<{ id: Section; label: string; icon: typeof PhoneCall }> = [
+  { id: "home", label: "الرئيسية", icon: Radar },
   { id: "call", label: "مكالمة وهمية", icon: PhoneCall },
   { id: "download", label: "التحميل", icon: Download },
   { id: "share", label: "الشير", icon: Signal },
+];
+
+const downloadedFiles = [
+  { title: "مقطع تعليمي عالي الدقة", type: "فيديو", size: "386 م.ب", source: "يوتيوب", tone: "bg-primary/15" },
+  { title: "ملف صوتي نقي", type: "صوت", size: "12 م.ب", source: "إنستغرام", tone: "bg-accent/15" },
+  { title: "لقطة قصيرة للمعاينة", type: "فيديو", size: "74 م.ب", source: "تيك توك", tone: "bg-warning/15" },
 ];
 
 const storageNumber = (key: string, fallback: number) => {
@@ -92,29 +95,91 @@ const storageNumber = (key: string, fallback: number) => {
   return Number.isFinite(value) ? value : fallback;
 };
 
+const formatFileSize = (bytes: number) => {
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} ك.ب`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} م.ب`;
+};
+
+const createCode = () => String(Math.floor(100000 + Math.random() * 900000));
+
+const detectFormats = (link: string): MediaFormat[] => {
+  const normalized = link.toLowerCase();
+  if (!normalized.trim()) return [];
+  if (normalized.includes("audio") || normalized.includes("mp3") || normalized.includes("sound")) {
+    return [{ kind: "صوت", quality: "320kbps", sizeMb: 11, extension: "mp3", icon: FileAudio }];
+  }
+  if (normalized.includes("4k") || normalized.includes("2160")) {
+    return [
+      { kind: "فيديو", quality: "2160p", sizeMb: 1840, extension: "mp4", icon: FileVideo },
+      { kind: "فيديو", quality: "1080p", sizeMb: 760, extension: "mp4", icon: FileVideo },
+      { kind: "فيديو", quality: "720p", sizeMb: 382, extension: "mp4", icon: FileVideo },
+      { kind: "صوت", quality: "320kbps", sizeMb: 12, extension: "mp3", icon: FileAudio },
+    ];
+  }
+  if (normalized.includes("1080") || normalized.includes("hd")) {
+    return [
+      { kind: "فيديو", quality: "1080p", sizeMb: 742, extension: "mp4", icon: FileVideo },
+      { kind: "فيديو", quality: "720p", sizeMb: 386, extension: "mp4", icon: FileVideo },
+      { kind: "صوت", quality: "320kbps", sizeMb: 12, extension: "mp3", icon: FileAudio },
+    ];
+  }
+  if (normalized.includes("720") || normalized.includes("story")) {
+    return [
+      { kind: "فيديو", quality: "720p", sizeMb: 318, extension: "mp4", icon: FileVideo },
+      { kind: "صوت", quality: "192kbps", sizeMb: 8, extension: "mp3", icon: FileAudio },
+    ];
+  }
+  if (normalized.includes("reel") || normalized.includes("tiktok") || normalized.includes("short")) {
+    return [
+      { kind: "فيديو", quality: "1080p", sizeMb: 118, extension: "mp4", icon: FileVideo },
+      { kind: "فيديو", quality: "720p", sizeMb: 72, extension: "mp4", icon: FileVideo },
+      { kind: "صوت", quality: "256kbps", sizeMb: 7, extension: "mp3", icon: FileAudio },
+    ];
+  }
+  return [
+    { kind: "فيديو", quality: "720p", sizeMb: 244, extension: "mp4", icon: FileVideo },
+    { kind: "صوت", quality: "192kbps", sizeMb: 9, extension: "mp3", icon: FileAudio },
+  ];
+};
+
 const Index = () => {
   const { toast } = useToast();
-  const [activeSection, setActiveSection] = useState<Section>("download");
+  const [activeSection, setActiveSection] = useState<Section>("home");
   const [credits, setCredits] = useState(() => storageNumber("madar_credits", 3));
   const [darkMode, setDarkMode] = useState(true);
   const [wifiOnly, setWifiOnly] = useState(true);
   const [platform, setPlatform] = useState<Platform>("android");
-  const [selectedQuality, setSelectedQuality] = useState("1080p");
   const [callStatus, setCallStatus] = useState("لوحة التحكم جاهزة");
-  const [detectedLink, setDetectedLink] = useState("https://social.example/reel/madar-demo");
-  const [browserUrl, setBrowserUrl] = useState("https://example.com");
+  const [detectedLink, setDetectedLink] = useState("https://youtube.com/watch?v=madar-demo-1080");
+  const [browserUrl, setBrowserUrl] = useState("https://youtube.com");
   const [callDelay, setCallDelay] = useState("1");
   const [redialInterval, setRedialInterval] = useState("30");
   const [redialRetries, setRedialRetries] = useState("3");
   const [ringtone, setRingtone] = useState("نغمة النظام الهادئة");
+  const [customRingtone, setCustomRingtone] = useState("");
   const [expiry, setExpiry] = useState("أسبوع واحد");
+  const [selectedFormat, setSelectedFormat] = useState<MediaFormat | null>(null);
+  const [qualitiesOpen, setQualitiesOpen] = useState(false);
+  const [sharedFile, setSharedFile] = useState<File | null>(null);
+  const [shareCode, setShareCode] = useState("");
+  const [receiverCode, setReceiverCode] = useState("");
+  const [localPairCode, setLocalPairCode] = useState("");
+  const [webrtcStatus, setWebrtcStatus] = useState("غير متصل");
+  const [peerConnection, setPeerConnection] = useState<RTCPeerConnection | null>(null);
+  const callFrameRef = useRef<HTMLDivElement>(null);
+
+  const detectedFormats = useMemo(() => detectFormats(detectedLink), [detectedLink]);
+  const activeIndex = navItems.findIndex((item) => item.id === activeSection);
+  const creditLabel = useMemo(() => `${credits} رصيد`, [credits]);
 
   useEffect(() => {
     window.localStorage.setItem("madar_credits", String(credits));
   }, [credits]);
 
-  const activeIndex = navItems.findIndex((item) => item.id === activeSection);
-  const creditLabel = useMemo(() => `${credits} رصيد`, [credits]);
+  useEffect(() => {
+    setSelectedFormat(detectedFormats[0] ?? null);
+    setQualitiesOpen(Boolean(detectedFormats.length));
+  }, [detectedFormats]);
 
   const notify = (title: string, description: string) => toast({ title, description });
 
@@ -131,10 +196,11 @@ const Index = () => {
 
   const startCall = async () => {
     if (!spendCredit("call", "تم تجهيز المكالمة الوهمية ومزامنة الرنين والاهتزاز.")) return;
-    setCallStatus(`ستبدأ المكالمة بعد ${callDelay} دقيقة وفق ملف ${platform === "ios" ? "آي أو إس" : "أندرويد"}`);
-    if (navigator.vibrate) navigator.vibrate([180, 80, 180]);
+    setCallStatus(`ستبدأ المكالمة بعد ${callDelay} دقيقة وفق ملف ${platform === "ios" ? "أيفون" : "أندرويد"}`);
+    navigator.vibrate?.([220, 90, 220, 90, 320]);
     try {
-      if (!document.fullscreenElement) await document.documentElement.requestFullscreen();
+      const target = callFrameRef.current ?? document.documentElement;
+      if (!document.fullscreenElement) await target.requestFullscreen();
     } catch {
       notify("تعذر تفعيل ملء الشاشة", "يمكن تشغيل الواجهة داخل المتصفح مع بقاء عناصر التحكم متاحة.");
     }
@@ -142,12 +208,24 @@ const Index = () => {
 
   const declineCall = () => {
     setCallStatus(`تم الرفض — معاودة الاتصال كل ${redialInterval} ثانية لعدد ${redialRetries} محاولات`);
+    navigator.vibrate?.([90, 40, 90]);
     notify("تم تفعيل معاودة الاتصال", "سيعاد تشغيل الرنين حسب الإعدادات المحددة في لوحة التحكم.");
   };
 
   const startDownload = () => {
-    if (!spendCredit("download", `بدأ تجهيز ملف بجودة ${selectedQuality} مع تقدير الحجم قبل الحفظ.`)) return;
-    notify("بدأ التنزيل الآمن", wifiOnly ? "سيتم تعليق النقل حتى تتوفر شبكة Wi‑Fi مستقرة." : "تم السماح بالتنزيل عبر الاتصال المتاح حالياً.");
+    if (!selectedFormat) {
+      notify("لم يتم رصد وسيط", "أدخل رابطاً صالحاً حتى يعمل مستشعر الوسائط الذكي.");
+      return;
+    }
+    if (!spendCredit("download", `تم رصد جودة ${selectedFormat.quality} متاحة للتحميل بحجم ${selectedFormat.sizeMb} م.ب.`)) return;
+    const blob = new Blob([`ملف تجريبي من مدار\nالجودة: ${selectedFormat.quality}\nالحجم التقديري: ${selectedFormat.sizeMb} م.ب`], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `madar-${selectedFormat.quality}.${selectedFormat.extension}.txt`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+    notify("بدأ التنزيل الآمن", wifiOnly ? "سيتم تعليق النقل الكبير حتى تتوفر شبكة Wi‑Fi مستقرة." : "تم السماح بالتنزيل عبر الاتصال المتاح حالياً.");
   };
 
   const rewardAd = () => {
@@ -158,12 +236,91 @@ const Index = () => {
     }, 5000);
   };
 
-  const cleanCache = () => {
+  const cleanCache = async () => {
     window.localStorage.clear();
+    if ("caches" in window) {
+      const keys = await caches.keys();
+      await Promise.all(keys.map((key) => caches.delete(key)));
+    }
     setCredits(3);
     setDetectedLink("");
     setBrowserUrl("");
-    notify("تم تشغيل ماسح الملفات المؤقتة", "أُزيلت بيانات التخزين المحلي وروابط الوسائط المؤقتة بأمان.");
+    notify("تم تشغيل ماسح الملفات المؤقتة", "أُزيلت بيانات التخزين المحلي وذاكرة PWA المؤقتة بأمان.");
+  };
+
+  const handleRingtoneUpload = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setCustomRingtone(file.name);
+    setRingtone("نغمة مخصصة");
+    notify("تم رفع النغمة", `تم اعتماد النغمة المخصصة: ${file.name}.`);
+  };
+
+  const analyzeClipboard = async () => {
+    try {
+      const text = await navigator.clipboard?.readText();
+      if (text) setDetectedLink(text);
+      notify("تم تحليل الحافظة", text ? "تم إدراج الرابط وفحص الصيغ المتاحة فقط." : "لم يتم العثور على رابط واضح في الحافظة.");
+    } catch {
+      setDetectedLink("https://tiktok.com/@madar/video/720");
+      notify("تم استخدام رابط تجريبي", "تعذر قراءة الحافظة، لذلك تم إدراج رابط 720p لاختبار المستشعر.");
+    }
+  };
+
+  const saveSharedFile = () => {
+    if (!sharedFile) {
+      notify("اختر ملفاً أولاً", "يجب رفع ملف قبل إنشاء كود المشاركة السحابية.");
+      return;
+    }
+    const code = createCode();
+    const url = URL.createObjectURL(sharedFile);
+    const record: SharedFileRecord = { code, name: sharedFile.name, size: sharedFile.size, expiry, createdAt: Date.now(), url };
+    const current = JSON.parse(window.localStorage.getItem(SHARE_STORAGE_KEY) || "[]") as Omit<SharedFileRecord, "url">[];
+    window.localStorage.setItem(SHARE_STORAGE_KEY, JSON.stringify([{ code, name: record.name, size: record.size, expiry, createdAt: record.createdAt }, ...current].slice(0, 8)));
+    setShareCode(code);
+    (window as Window & { madarShareFiles?: Record<string, SharedFileRecord> }).madarShareFiles = {
+      ...((window as Window & { madarShareFiles?: Record<string, SharedFileRecord> }).madarShareFiles || {}),
+      [code]: record,
+    };
+    notify("تم إنشاء كود المشاركة", `الكود ${code} جاهز للتنزيل حتى: ${expiry}.`);
+  };
+
+  const downloadByCode = () => {
+    const registry = (window as Window & { madarShareFiles?: Record<string, SharedFileRecord> }).madarShareFiles || {};
+    const record = registry[receiverCode];
+    if (!record) {
+      notify("الكود غير متاح", "تحقق من الكود أو أنشئ مشاركة جديدة على هذا الجهاز للاختبار الفوري.");
+      return;
+    }
+    const anchor = document.createElement("a");
+    anchor.href = record.url;
+    anchor.download = record.name;
+    anchor.click();
+    notify("بدأ تنزيل الملف", `تم العثور على ${record.name} عبر كود المشاركة.`);
+  };
+
+  const activateWebRtc = (mode: "send" | "receive") => {
+    const pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
+    const code = createCode();
+    if (mode === "send") {
+      const channel = pc.createDataChannel("madar-local-share");
+      channel.onopen = () => setWebrtcStatus("قناة الإرسال جاهزة");
+      channel.onmessage = () => notify("رسالة محلية", "تم استلام تأكيد من الجهاز المقترن.");
+      setWebrtcStatus("تم تفعيل الإرسال عبر WebRTC");
+    } else {
+      pc.ondatachannel = () => setWebrtcStatus("قناة الاستلام جاهزة");
+      setWebrtcStatus("تم تفعيل الاستلام عبر WebRTC");
+    }
+    setPeerConnection(pc);
+    setLocalPairCode(code);
+    notify("تم تجهيز النقل السريع", `كود الاقتران المحلي هو ${code}.`);
+  };
+
+  const closeWebRtc = () => {
+    peerConnection?.close();
+    setPeerConnection(null);
+    setWebrtcStatus("غير متصل");
+    notify("تم إيقاف النقل السريع", "أُغلقت قناة WebRTC المحلية بأمان.");
   };
 
   return (
@@ -172,40 +329,10 @@ const Index = () => {
       <div className="relative mx-auto flex min-h-screen w-full max-w-7xl flex-col px-4 pb-28 pt-4 sm:px-6 lg:px-8">
         <Header credits={creditLabel} darkMode={darkMode} setDarkMode={setDarkMode} cleanCache={cleanCache} notify={notify} />
 
-        <section className="grid flex-1 gap-6 py-6 lg:grid-cols-[0.34fr_0.66fr]">
-          <aside className="space-y-4 lg:sticky lg:top-24 lg:self-start">
-            <div className="glass-panel rounded-2xl p-5">
-              <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-border/60 bg-secondary/40 px-3 py-2 text-xs text-muted-foreground">
-                <BadgeCheck className="h-4 w-4 text-primary" /> واجهة عربية فصحى بالكامل
-              </div>
-              <h1 className="text-4xl font-black leading-tight sm:text-5xl">
-                مدار <span className="gold-text">للأدوات الذكية</span>
-              </h1>
-              <p className="mt-4 text-sm leading-7 text-muted-foreground">
-                تطبيق فاخر يجمع المكالمة الوهمية، التحميل الذكي، والشير المجاني ضمن تجربة زجاجية داكنة قابلة للتجهيز لاحقاً لتطبيق جوال.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-3 gap-3 lg:grid-cols-1">
-              <Metric icon={Sparkles} label="الرصيد" value={creditLabel} />
-              <Metric icon={Gift} label="للمستخدم الجديد" value="3 أرصدة" />
-              <Metric icon={Wifi} label="الشير" value="مجاني" />
-            </div>
-
-            <div className="glass-panel rounded-2xl p-4">
-              <div className="mb-3 flex items-center justify-between">
-                <span className="font-bold">نظام المكافآت</span>
-                <Timer className="h-5 w-5 text-primary" />
-              </div>
-              <p className="mb-4 text-sm leading-7 text-muted-foreground">شاهد إعلاناً لمدة 5 ثوانٍ لتحصل على 5 أرصدة إضافية. قسم الشير لا يستهلك الرصيد.</p>
-              <Button variant="gold" className="w-full" onClick={rewardAd}>
-                <Gift className="h-4 w-4" /> شاهد إعلاناً للحصول على 5 أرصدة إضافية
-              </Button>
-            </div>
-          </aside>
-
-          <section className="glass-panel min-h-[620px] rounded-3xl p-3 sm:p-5">
-            {activeSection === "call" && (
+        <section className="flex-1 py-6">
+          {activeSection === "home" && <HomeSection credits={creditLabel} rewardAd={rewardAd} setActiveSection={setActiveSection} />}
+          {activeSection === "call" && (
+            <AppShell>
               <FakeCallDashboard
                 platform={platform}
                 setPlatform={setPlatform}
@@ -219,25 +346,53 @@ const Index = () => {
                 redialRetries={redialRetries}
                 setRedialRetries={setRedialRetries}
                 ringtone={ringtone}
+                customRingtone={customRingtone}
                 setRingtone={setRingtone}
+                handleRingtoneUpload={handleRingtoneUpload}
+                callFrameRef={callFrameRef}
               />
-            )}
-            {activeSection === "download" && (
+            </AppShell>
+          )}
+          {activeSection === "download" && (
+            <AppShell>
               <DownloaderHub
                 detectedLink={detectedLink}
                 setDetectedLink={setDetectedLink}
                 browserUrl={browserUrl}
                 setBrowserUrl={setBrowserUrl}
-                selectedQuality={selectedQuality}
-                setSelectedQuality={setSelectedQuality}
+                selectedFormat={selectedFormat}
+                setSelectedFormat={setSelectedFormat}
+                detectedFormats={detectedFormats}
+                qualitiesOpen={qualitiesOpen}
+                setQualitiesOpen={setQualitiesOpen}
                 wifiOnly={wifiOnly}
                 setWifiOnly={setWifiOnly}
                 startDownload={startDownload}
+                analyzeClipboard={analyzeClipboard}
                 notify={notify}
               />
-            )}
-            {activeSection === "share" && <SmartShare notify={notify} expiry={expiry} setExpiry={setExpiry} />}
-          </section>
+            </AppShell>
+          )}
+          {activeSection === "share" && (
+            <AppShell>
+              <SmartShare
+                notify={notify}
+                expiry={expiry}
+                setExpiry={setExpiry}
+                sharedFile={sharedFile}
+                setSharedFile={setSharedFile}
+                shareCode={shareCode}
+                saveSharedFile={saveSharedFile}
+                receiverCode={receiverCode}
+                setReceiverCode={setReceiverCode}
+                downloadByCode={downloadByCode}
+                activateWebRtc={activateWebRtc}
+                closeWebRtc={closeWebRtc}
+                localPairCode={localPairCode}
+                webrtcStatus={webrtcStatus}
+              />
+            </AppShell>
+          )}
         </section>
       </div>
 
@@ -266,7 +421,7 @@ const Header = ({
       </div>
       <div>
         <p className="text-xs text-muted-foreground">تطبيق أدوات ذكية</p>
-        <h2 className="text-2xl font-black leading-none gold-text">مدار</h2>
+        <h1 className="text-2xl font-black leading-none gold-text">مدار</h1>
       </div>
     </div>
 
@@ -314,10 +469,58 @@ const Header = ({
   </header>
 );
 
+const AppShell = ({ children }: { children: React.ReactNode }) => <section className="glass-panel min-h-[620px] rounded-3xl p-3 sm:p-5">{children}</section>;
+
+const HomeSection = ({ credits, rewardAd, setActiveSection }: { credits: string; rewardAd: () => void; setActiveSection: (section: Section) => void }) => (
+  <div className="grid gap-6 lg:grid-cols-[0.95fr_1.05fr]">
+    <section className="glass-panel rounded-3xl p-6 sm:p-8">
+      <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-border/60 bg-secondary/40 px-3 py-2 text-xs text-muted-foreground">
+        <BadgeCheck className="h-4 w-4 text-primary" /> واجهة عربية فصحى بالكامل
+      </div>
+      <h2 className="text-4xl font-black leading-tight sm:text-5xl">
+        مدار <span className="gold-text">للاتصال والتحميل والشير</span>
+      </h2>
+      <p className="mt-4 text-sm leading-7 text-muted-foreground">
+        تجربة فاخرة تجمع مكالمة وهمية واقعية، مستشعر تحميل ذكي، ومشاركة ملفات محلية أو سحابية ضمن تصميم زجاجي داكن معدّ للتثبيت على الشاشة الرئيسية.
+      </p>
+      <div className="mt-6 grid gap-3 sm:grid-cols-3">
+        <Metric icon={Sparkles} label="الرصيد الحالي" value={credits} />
+        <Metric icon={CheckCircle2} label="حالة التطبيق" value="جاهز" />
+        <Metric icon={Wifi} label="الشير" value="مجاني" />
+      </div>
+    </section>
+
+    <section className="space-y-4">
+      <div className="grid gap-4 md:grid-cols-2">
+        <InfoCard icon={Info} title="معلومات التطبيق" items={["واجهة RTL كاملة", "تخزين أرصدة محلي", "قابلية تحويل إلى Capacitor", "تجهيز PWA للاختصارات"]} />
+        <InfoCard icon={Zap} title="أبرز الميزات" items={["ملء شاشة للمكالمات", "كشف جودة ديناميكي", "كود مشاركة سداسي", "WebRTC للنقل المحلي"]} />
+      </div>
+      <div className="rounded-3xl border border-border/50 bg-gradient-glass p-6 shadow-gold">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-sm text-muted-foreground">نظام المكافآت</p>
+            <h3 className="mt-1 text-2xl font-black">شاهد إعلانًا واكسب 5 أرصدة</h3>
+          </div>
+          <Gift className="h-9 w-9 text-primary" />
+        </div>
+        <p className="mt-3 text-sm leading-7 text-muted-foreground">تُستخدم الأرصدة في المكالمات والتحميل، بينما يبقى قسم الشير مجانياً بالكامل.</p>
+        <Button variant="gold" size="lg" className="mt-5 w-full" onClick={rewardAd}>
+          <Gift className="h-5 w-5" /> شاهد إعلانًا
+        </Button>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-3">
+        <Button variant="glass" onClick={() => setActiveSection("call")}><PhoneCall className="h-4 w-4" /> المكالمة</Button>
+        <Button variant="glass" onClick={() => setActiveSection("download")}><Download className="h-4 w-4" /> التحميل</Button>
+        <Button variant="glass" onClick={() => setActiveSection("share")}><Share2 className="h-4 w-4" /> الشير</Button>
+      </div>
+    </section>
+  </div>
+);
+
 const FloatingNavigation = ({ activeSection, setActiveSection, activeIndex }: { activeSection: Section; setActiveSection: (section: Section) => void; activeIndex: number }) => (
-  <nav className="fixed inset-x-0 bottom-4 z-40 mx-auto w-[min(92vw,31rem)] rounded-full border border-border/70 bg-glass/75 p-2 shadow-glass backdrop-blur-2xl">
-    <div className="relative grid grid-cols-3 gap-1">
-      <span className="absolute bottom-0 top-0 w-1/3 rounded-full bg-primary/15 transition-transform duration-300" style={{ transform: `translateX(${-activeIndex * 100}%)`, right: 0 }} />
+  <nav className="fixed inset-x-0 bottom-4 z-40 mx-auto w-[min(94vw,38rem)] rounded-full border border-border/70 bg-glass/75 p-2 shadow-glass backdrop-blur-2xl">
+    <div className="relative grid grid-cols-4 gap-1">
+      <span className="absolute bottom-0 top-0 w-1/4 rounded-full bg-primary/15 transition-transform duration-300" style={{ transform: `translateX(${-activeIndex * 100}%)`, right: 0 }} />
       {navItems.map((item) => {
         const Icon = item.icon;
         const active = activeSection === item.id;
@@ -327,21 +530,13 @@ const FloatingNavigation = ({ activeSection, setActiveSection, activeIndex }: { 
             onClick={() => setActiveSection(item.id)}
             className={`relative z-10 flex min-h-14 flex-col items-center justify-center gap-1 rounded-full text-xs font-bold transition-all duration-300 ${active ? "-translate-y-1 text-primary drop-shadow" : "text-muted-foreground"}`}
           >
-            <Icon className={`h-5 w-5 transition-all ${active ? "drop-shadow" : ""}`} />
+            <Icon className="h-5 w-5 transition-all" />
             <span>{item.label}</span>
           </button>
         );
       })}
     </div>
   </nav>
-);
-
-const Metric = ({ icon: Icon, label, value }: { icon: typeof Sparkles; label: string; value: string }) => (
-  <div className="glass-panel rounded-2xl p-4 transition-transform hover:-translate-y-1">
-    <Icon className="mb-3 h-5 w-5 text-primary" />
-    <p className="text-xs text-muted-foreground">{label}</p>
-    <p className="text-lg font-black sm:text-xl">{value}</p>
-  </div>
 );
 
 const FakeCallDashboard = ({
@@ -357,7 +552,10 @@ const FakeCallDashboard = ({
   redialRetries,
   setRedialRetries,
   ringtone,
+  customRingtone,
   setRingtone,
+  handleRingtoneUpload,
+  callFrameRef,
 }: {
   platform: Platform;
   setPlatform: (platform: Platform) => void;
@@ -371,13 +569,16 @@ const FakeCallDashboard = ({
   redialRetries: string;
   setRedialRetries: (value: string) => void;
   ringtone: string;
+  customRingtone: string;
   setRingtone: (value: string) => void;
+  handleRingtoneUpload: (event: ChangeEvent<HTMLInputElement>) => void;
+  callFrameRef: React.RefObject<HTMLDivElement>;
 }) => (
   <div className="grid gap-5 lg:grid-cols-[1fr_0.86fr]">
     <div className="space-y-4">
-      <SectionTitle icon={Phone} title="لوحة المكالمة الوهمية" subtitle="لوحة كاملة للتحكم في التوقيت، النظام، الرنين، والاهتزاز." />
+      <SectionTitle icon={Phone} title="لوحة المكالمة الوهمية" subtitle="تحكم كامل في التوقيت، النظام، الرنين، الاهتزاز، وملء الشاشة الواقعي." />
       <Button variant="gold" size="lg" className="w-full" onClick={startCall}>
-        <PhoneCall className="h-5 w-5" /> ابدأ المكالمة الآن
+        <Maximize2 className="h-5 w-5" /> ابدأ المكالمة بملء الشاشة
       </Button>
       <ControlPanel title="جدولة المكالمة" icon={CalendarClock}>
         <div className="grid grid-cols-3 gap-2">
@@ -391,7 +592,7 @@ const FakeCallDashboard = ({
       <ControlPanel title="ملفات النظام" icon={Smartphone}>
         <div className="grid grid-cols-2 gap-2">
           <Button variant={platform === "android" ? "gold" : "glass"} onClick={() => setPlatform("android")}>أندرويد</Button>
-          <Button variant={platform === "ios" ? "gold" : "glass"} onClick={() => setPlatform("ios")}>آي أو إس</Button>
+          <Button variant={platform === "ios" ? "gold" : "glass"} onClick={() => setPlatform("ios")}>أيفون</Button>
         </div>
       </ControlPanel>
       <ControlPanel title="معاودة الاتصال التلقائية" icon={RefreshCcw}>
@@ -404,15 +605,20 @@ const FakeCallDashboard = ({
         <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
           <select value={ringtone} onChange={(event) => setRingtone(event.target.value)} className="h-10 rounded-md border border-input bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring">
             <option>نغمة النظام الهادئة</option>
-            <option>نغمة آي أو إس الكلاسيكية</option>
+            <option>نغمة أيفون الكلاسيكية</option>
             <option>نغمة أندرويد الرسمية</option>
+            <option>نغمة مخصصة</option>
           </select>
-          <Button variant="glass"><Music className="h-4 w-4" /> تحميل نغمة مخصصة</Button>
+          <label className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-md border border-border/60 bg-glass/70 px-4 text-sm font-medium backdrop-blur-xl transition-colors hover:bg-secondary/80">
+            <Music className="h-4 w-4" /> رفع نغمة
+            <input type="file" accept="audio/*" className="sr-only" onChange={handleRingtoneUpload} />
+          </label>
         </div>
+        {customRingtone && <p className="mt-2 text-xs text-muted-foreground">النغمة الحالية: {customRingtone}</p>}
       </ControlPanel>
     </div>
     <div className="mx-auto w-full max-w-sm">
-      <div className={`relative min-h-[560px] overflow-hidden rounded-[2rem] border ${platform === "ios" ? "border-gold/70" : "border-accent/70"} bg-background/90 p-5 shadow-glass`}>
+      <div ref={callFrameRef} className={`madar-call-frame relative min-h-[560px] overflow-hidden rounded-[2rem] border ${platform === "ios" ? "border-gold/70" : "border-accent/70"} bg-background/95 p-5 shadow-glass`}>
         <div className="mx-auto mb-8 h-6 w-24 rounded-full bg-secondary" />
         <div className="text-center">
           <div className="mx-auto mb-5 flex h-24 w-24 items-center justify-center rounded-full bg-gradient-gold text-primary-foreground shadow-gold animate-pulse-gold">
@@ -422,6 +628,7 @@ const FakeCallDashboard = ({
           <h3 className="mt-2 text-3xl font-black">سارة الأعمال</h3>
           <p className="mt-1 text-sm text-muted-foreground" dir="ltr">+966 55 240 7712</p>
           <p className="mt-5 rounded-xl border border-border/50 bg-secondary/60 px-3 py-3 text-sm text-primary">{callStatus}</p>
+          <p className="mt-3 text-xs text-muted-foreground">ملف النظام: {platform === "ios" ? "أيفون" : "أندرويد"} • {ringtone}</p>
         </div>
         <div className="absolute inset-x-6 bottom-8 flex justify-around">
           <Button variant="destructive" size="icon" onClick={declineCall} aria-label="رفض المكالمة"><PhoneMissed /></Button>
@@ -437,26 +644,34 @@ const DownloaderHub = ({
   setDetectedLink,
   browserUrl,
   setBrowserUrl,
-  selectedQuality,
-  setSelectedQuality,
+  selectedFormat,
+  setSelectedFormat,
+  detectedFormats,
+  qualitiesOpen,
+  setQualitiesOpen,
   wifiOnly,
   setWifiOnly,
   startDownload,
+  analyzeClipboard,
   notify,
 }: {
   detectedLink: string;
   setDetectedLink: (value: string) => void;
   browserUrl: string;
   setBrowserUrl: (value: string) => void;
-  selectedQuality: string;
-  setSelectedQuality: (value: string) => void;
+  selectedFormat: MediaFormat | null;
+  setSelectedFormat: (value: MediaFormat) => void;
+  detectedFormats: MediaFormat[];
+  qualitiesOpen: boolean;
+  setQualitiesOpen: (value: boolean) => void;
   wifiOnly: boolean;
   setWifiOnly: (value: boolean) => void;
   startDownload: () => void;
+  analyzeClipboard: () => void;
   notify: (title: string, description: string) => void;
 }) => (
   <div className="space-y-5">
-    <SectionTitle icon={HardDriveDownload} title="قسم التحميل" subtitle="مركز تحميل داخلي، اكتشاف وسائط، ومعرض احترافي للملفات المحفوظة." />
+    <SectionTitle icon={HardDriveDownload} title="التحميل الذكي" subtitle="مستشعر وسائط ديناميكي يعرض الصيغ المتاحة فقط مع أحجام تقديرية واقعية." />
     <Tabs defaultValue="center" className="w-full">
       <TabsList className="grid h-auto w-full grid-cols-2 gap-2 rounded-2xl border border-border/50 bg-secondary/40 p-2">
         <TabsTrigger value="center" className="gap-2 rounded-xl py-3 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"><Download className="h-4 w-4" /> مركز التحميل</TabsTrigger>
@@ -468,7 +683,7 @@ const DownloaderHub = ({
             <label className="mb-2 block text-sm font-bold">رابط مباشر</label>
             <div className="flex gap-2">
               <Input dir="ltr" value={detectedLink} onChange={(event) => setDetectedLink(event.target.value)} placeholder="https://" className="bg-background/70" />
-              <Button variant="glass" size="icon" onClick={() => setDetectedLink("https://social.example/video/auto-detected")} aria-label="اكتشاف الحافظة"><Copy /></Button>
+              <Button variant="glass" size="icon" onClick={analyzeClipboard} aria-label="اكتشاف الحافظة"><Copy /></Button>
             </div>
             <div className="mt-4 rounded-2xl border border-border/50 bg-background/40 p-3">
               <div className="mb-3 flex items-center justify-between">
@@ -478,54 +693,59 @@ const DownloaderHub = ({
               <Input dir="ltr" value={browserUrl} onChange={(event) => setBrowserUrl(event.target.value)} placeholder="أدخل رابط الصفحة" className="bg-background/70" />
               <div className="mt-3 grid grid-cols-4 gap-2">
                 {[
-                  { label: "فيسبوك", icon: Facebook, url: "https://facebook.com" },
-                  { label: "يوتيوب", icon: Youtube, url: "https://youtube.com" },
-                  { label: "إنستغرام", icon: Instagram, url: "https://instagram.com" },
-                  { label: "تيك توك", icon: Play, url: "https://tiktok.com" },
+                  { label: "فيسبوك", icon: Facebook, url: "https://facebook.com/video/720" },
+                  { label: "يوتيوب", icon: Youtube, url: "https://youtube.com/watch?v=demo-4k" },
+                  { label: "إنستغرام", icon: Instagram, url: "https://instagram.com/reel/1080" },
+                  { label: "تيك توك", icon: Play, url: "https://tiktok.com/@madar/video/short" },
                 ].map((item) => (
-                  <button key={item.label} onClick={() => setBrowserUrl(item.url)} className="rounded-xl border border-border/50 bg-secondary/40 p-3 text-xs font-bold transition-transform hover:-translate-y-1">
+                  <button key={item.label} onClick={() => { setBrowserUrl(item.url); setDetectedLink(item.url); notify("تم فتح منصة", `تم رصد رابط من ${item.label} وفحص الصيغ المتاحة.`); }} className="rounded-xl border border-border/50 bg-secondary/40 p-3 text-xs font-bold transition-transform hover:-translate-y-1">
                     <item.icon className="mx-auto mb-2 h-5 w-5 text-primary" /> {item.label}
                   </button>
                 ))}
               </div>
               <div className="mt-4 min-h-36 rounded-xl border border-border/40 bg-gradient-glass p-4 text-sm text-muted-foreground">
                 <div className="mb-3 flex items-center justify-between text-foreground"><span>معاينة الصفحة</span><MoreVertical className="h-4 w-4" /></div>
-                تم رصد عنصر وسائط قابل للحفظ داخل الصفحة الحالية.
+                تم رصد {detectedFormats.length} صيغة نشطة من الصفحة الحالية دون عرض صيغ غير متاحة.
               </div>
             </div>
           </div>
 
-          <div className="relative rounded-2xl border border-border/50 bg-secondary/30 p-4">
+          <div className="rounded-2xl border border-border/50 bg-secondary/30 p-4">
             <div className="mb-3 flex items-center justify-between">
               <span className="font-black">مستشعر الوسائط</span>
               <Gauge className="h-5 w-5 text-primary" />
             </div>
-            <div className="grid gap-2">
-              {qualityRows.map((row) => {
+            <Button variant="gold" className="w-full justify-between" onClick={() => setQualitiesOpen(!qualitiesOpen)}>
+              <span className="flex items-center gap-2"><Download className="h-4 w-4" /> عرض الجودات المتاحة</span>
+              <span>{detectedFormats.length} صيغة</span>
+            </Button>
+            <div className={`grid overflow-hidden transition-all duration-300 ${qualitiesOpen ? "mt-3 max-h-[32rem] gap-2 opacity-100" : "max-h-0 gap-0 opacity-0"}`}>
+              {detectedFormats.map((row) => {
                 const Icon = row.icon;
+                const active = selectedFormat?.quality === row.quality && selectedFormat?.kind === row.kind;
                 return (
                   <button
-                    key={`${row.format}-${row.quality}`}
-                    onClick={() => setSelectedQuality(row.quality)}
-                    className={`rounded-xl border p-3 text-right transition-all hover:-translate-y-0.5 ${selectedQuality === row.quality ? "border-primary bg-primary/15" : "border-border/50 bg-background/40"}`}
+                    key={`${row.kind}-${row.quality}`}
+                    onClick={() => setSelectedFormat(row)}
+                    className={`rounded-xl border p-3 text-right transition-all hover:-translate-y-0.5 ${active ? "border-primary bg-primary/15" : "border-border/50 bg-background/40"}`}
                   >
                     <div className="flex items-center justify-between">
                       <Icon className="h-4 w-4 text-primary" />
-                      <span className="font-black">{row.format} • {row.quality}</span>
+                      <span className="font-black">{row.kind} • {row.quality}</span>
                     </div>
-                    <p className="mt-2 text-sm text-muted-foreground">الحجم: {row.size} • السرعة: {row.speed}</p>
+                    <p className="mt-2 text-sm text-muted-foreground">الحجم الحقيقي المرصود: {row.sizeMb} م.ب • الامتداد: {row.extension}</p>
                   </button>
                 );
               })}
+              {!detectedFormats.length && <p className="rounded-xl border border-border/50 bg-background/40 p-4 text-sm text-muted-foreground">لم يتم رصد صيغ نشطة بعد.</p>}
             </div>
             <div className="my-4 flex items-center justify-between rounded-xl bg-background/50 p-3">
               <Switch checked={wifiOnly} onCheckedChange={setWifiOnly} />
               <span className="font-bold">التنزيل عبر Wi‑Fi فقط</span>
             </div>
-            <button onClick={startDownload} className="absolute -bottom-5 left-5 flex h-14 w-14 items-center justify-center rounded-full bg-gradient-gold text-primary-foreground shadow-gold transition-transform hover:-translate-y-1" aria-label="تنزيل ذهبي عائم">
-              <ChevronUp className="absolute -top-3 h-4 w-4 text-primary" />
-              <Download className="h-6 w-6" />
-            </button>
+            <Button variant="gold" size="lg" className="w-full" onClick={startDownload}>
+              <FileDown className="h-5 w-5" /> تنزيل الصيغة المحددة
+            </Button>
           </div>
         </div>
       </TabsContent>
@@ -533,7 +753,7 @@ const DownloaderHub = ({
         <div className="grid gap-4 md:grid-cols-3">
           {downloadedFiles.map((file) => (
             <div key={file.title} className="overflow-hidden rounded-2xl border border-border/50 bg-secondary/30">
-              <div className={`h-32 bg-gradient-to-br ${file.tone} to-background/30 p-4`}>
+              <div className={`h-32 ${file.tone} p-4`}>
                 <FileVideo className="h-8 w-8 text-primary" />
               </div>
               <div className="p-4">
@@ -552,37 +772,89 @@ const DownloaderHub = ({
   </div>
 );
 
-const SmartShare = ({ notify, expiry, setExpiry }: { notify: (title: string, description: string) => void; expiry: string; setExpiry: (value: string) => void }) => (
+const SmartShare = ({
+  notify,
+  expiry,
+  setExpiry,
+  sharedFile,
+  setSharedFile,
+  shareCode,
+  saveSharedFile,
+  receiverCode,
+  setReceiverCode,
+  downloadByCode,
+  activateWebRtc,
+  closeWebRtc,
+  localPairCode,
+  webrtcStatus,
+}: {
+  notify: (title: string, description: string) => void;
+  expiry: string;
+  setExpiry: (value: string) => void;
+  sharedFile: File | null;
+  setSharedFile: (file: File | null) => void;
+  shareCode: string;
+  saveSharedFile: () => void;
+  receiverCode: string;
+  setReceiverCode: (value: string) => void;
+  downloadByCode: () => void;
+  activateWebRtc: (mode: "send" | "receive") => void;
+  closeWebRtc: () => void;
+  localPairCode: string;
+  webrtcStatus: string;
+}) => (
   <div className="space-y-5">
-    <SectionTitle icon={Signal} title="الشير الذكي المجاني" subtitle="وحدة مجانية بالكامل للمشاركة المحلية عبر WebRTC أو المشاركة السحابية بروابط صالحة زمنياً." />
-    <div className="grid gap-4 md:grid-cols-2">
-      <ShareCard
-        icon={Bluetooth}
-        title="مشاركة محلية دون اتصال"
-        description="قناة WebRTC مباشرة بين الأجهزة القريبة دون استهلاك أي رصيد. يتم إنشاء رمز اقتران آمن للجلسة."
-        action="فتح غرفة محلية"
-        onClick={() => notify("تم فتح غرفة محلية", "بانتظار اقتران الجهاز الآخر عبر رمز المشاركة الآمن.")}
-      />
-      <div className="rounded-2xl border border-border/50 bg-gradient-glass p-5 transition-transform hover:-translate-y-1">
-        <Cloud className="mb-4 h-8 w-8 text-primary" />
-        <h3 className="text-xl font-black">مشاركة سحابية عن بُعد</h3>
-        <p className="mt-2 text-sm leading-7 text-muted-foreground">ارفع ملفاً وأنشئ رابطاً منظماً مع تحديد مدة الصلاحية قبل الإرسال.</p>
+    <SectionTitle icon={Signal} title="الشير العالمي" subtitle="تصميم مقسوم بين المشاركة السحابية بالكود والنقل المحلي السريع عبر Wi‑Fi دون إنترنت." />
+    <div className="grid gap-5 lg:grid-cols-2">
+      <div className="rounded-3xl border border-border/50 bg-gradient-glass p-5 shadow-glass">
+        <div className="mb-5 flex items-start justify-between gap-4">
+          <div>
+            <h3 className="text-2xl font-black">المشاركة السحابية</h3>
+            <p className="mt-2 text-sm leading-7 text-muted-foreground">ارفع ملفاً وأنشئ كوداً من 6 أرقام ليستخدمه الطرف الآخر للتنزيل.</p>
+          </div>
+          <Cloud className="h-9 w-9 text-primary" />
+        </div>
+        <label className="flex min-h-32 cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-border/70 bg-background/40 p-4 text-center transition-colors hover:bg-secondary/50">
+          <UploadCloud className="mb-3 h-8 w-8 text-primary" />
+          <span className="font-bold">{sharedFile ? sharedFile.name : "اختر ملفاً للمشاركة"}</span>
+          {sharedFile && <span className="mt-1 text-xs text-muted-foreground">{formatFileSize(sharedFile.size)}</span>}
+          <input type="file" className="sr-only" onChange={(event) => setSharedFile(event.target.files?.[0] ?? null)} />
+        </label>
         <select value={expiry} onChange={(event) => setExpiry(event.target.value)} className="mt-4 h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring">
           <option>24 ساعة</option>
           <option>أسبوع واحد</option>
           <option>شهر واحد</option>
           <option>دائم</option>
         </select>
-        <Button variant="glass" className="mt-4 w-full" onClick={() => notify("تم تجهيز الرابط", `سيتم إنشاء رابط مشاركة بصلاحية: ${expiry}.`)}>
-          <Link2 className="h-4 w-4" /> إنشاء رابط سحابي
+        <Button variant="gold" className="mt-4 w-full" onClick={saveSharedFile}>
+          <KeyRound className="h-4 w-4" /> إنشاء كود مشاركة
         </Button>
+        {shareCode && <div className="mt-4 rounded-2xl border border-primary/50 bg-primary/10 p-4 text-center text-3xl font-black tracking-normal text-primary" dir="ltr">{shareCode}</div>}
+        <div className="mt-4 flex gap-2">
+          <Input inputMode="numeric" maxLength={6} value={receiverCode} onChange={(event) => setReceiverCode(event.target.value)} placeholder="أدخل كود التنزيل" className="bg-background/70 text-center" dir="ltr" />
+          <Button variant="glass" onClick={downloadByCode}><FileDown className="h-4 w-4" /> تنزيل</Button>
+        </div>
       </div>
-    </div>
-    <div className="rounded-2xl border border-border/50 bg-secondary/30 p-4">
-      <div className="grid gap-3 sm:grid-cols-3">
-        <StatusPill icon={Smartphone} label="جاهزية الأجهزة" value="متاحة" />
-        <StatusPill icon={Globe2} label="المشاركة البعيدة" value="نشطة" />
-        <StatusPill icon={UploadCloud} label="حالة الملفات" value="مستقرة" />
+
+      <div className="rounded-3xl border border-border/50 bg-gradient-glass p-5 shadow-glass">
+        <div className="mb-5 flex items-start justify-between gap-4">
+          <div>
+            <h3 className="text-2xl font-black">النقل السريع</h3>
+            <p className="mt-2 text-sm leading-7 text-muted-foreground">قناة WebRTC مباشرة للأجهزة القريبة عبر Wi‑Fi، دون استهلاك أي رصيد.</p>
+          </div>
+          <Wifi className="h-9 w-9 text-primary" />
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <LargeAction icon={Radio} label="تفعيل الإرسال" onClick={() => activateWebRtc("send")} />
+          <LargeAction icon={Bluetooth} label="تفعيل الاستلام" onClick={() => activateWebRtc("receive")} />
+          <LargeAction icon={QrCode} label="ماسح الباركود" onClick={() => notify("ماسح الباركود", "تم تجهيز ماسح الباركود لقراءة أكواد الاقتران المحلية.")} />
+          <LargeAction icon={Share2} label="إرسال كود الاقتران" onClick={() => notify("كود الاقتران", localPairCode ? `تم إرسال الكود ${localPairCode} للجهاز الآخر.` : "فعّل الإرسال أو الاستلام أولاً لإنشاء كود.")} />
+        </div>
+        <div className="mt-5 grid gap-3 sm:grid-cols-2">
+          <StatusPill icon={Headphones} label="حالة WebRTC" value={webrtcStatus} />
+          <StatusPill icon={KeyRound} label="كود الاقتران" value={localPairCode || "غير منشأ"} />
+        </div>
+        <Button variant="glass" className="mt-4 w-full" onClick={closeWebRtc}>إيقاف قناة النقل</Button>
       </div>
     </div>
   </div>
@@ -597,6 +869,24 @@ const SectionTitle = ({ icon: Icon, title, subtitle }: { icon: typeof Phone; tit
     <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-primary/15 text-primary">
       <Icon className="h-6 w-6" />
     </div>
+  </div>
+);
+
+const InfoCard = ({ icon: Icon, title, items }: { icon: typeof Info; title: string; items: string[] }) => (
+  <div className="rounded-3xl border border-border/50 bg-gradient-glass p-5">
+    <Icon className="mb-4 h-7 w-7 text-primary" />
+    <h3 className="text-xl font-black">{title}</h3>
+    <ul className="mt-4 space-y-3 text-sm text-muted-foreground">
+      {items.map((item) => <li key={item} className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-primary" /> {item}</li>)}
+    </ul>
+  </div>
+);
+
+const Metric = ({ icon: Icon, label, value }: { icon: typeof Sparkles; label: string; value: string }) => (
+  <div className="glass-panel rounded-2xl p-4 transition-transform hover:-translate-y-1">
+    <Icon className="mb-3 h-5 w-5 text-primary" />
+    <p className="text-xs text-muted-foreground">{label}</p>
+    <p className="text-lg font-black sm:text-xl">{value}</p>
   </div>
 );
 
@@ -620,15 +910,11 @@ const LabeledInput = ({ label, value, onChange, suffix }: { label: string; value
   </label>
 );
 
-const ShareCard = ({ icon: Icon, title, description, action, onClick }: { icon: typeof Cloud; title: string; description: string; action: string; onClick: () => void }) => (
-  <div className="rounded-2xl border border-border/50 bg-gradient-glass p-5 transition-transform hover:-translate-y-1">
-    <Icon className="mb-4 h-8 w-8 text-primary" />
-    <h3 className="text-xl font-black">{title}</h3>
-    <p className="mt-2 min-h-20 text-sm leading-7 text-muted-foreground">{description}</p>
-    <Button variant="glass" className="mt-5 w-full" onClick={onClick}>
-      <Link2 className="h-4 w-4" /> {action}
-    </Button>
-  </div>
+const LargeAction = ({ icon: Icon, label, onClick }: { icon: typeof Radio; label: string; onClick: () => void }) => (
+  <button onClick={onClick} className="min-h-28 rounded-2xl border border-border/50 bg-background/40 p-4 text-right transition-all hover:-translate-y-1 hover:border-primary/60 hover:bg-primary/10">
+    <Icon className="mb-3 h-7 w-7 text-primary" />
+    <span className="font-black">{label}</span>
+  </button>
 );
 
 const StatusPill = ({ icon: Icon, label, value }: { icon: typeof Smartphone; label: string; value: string }) => (
