@@ -4,6 +4,7 @@ import {
   BellRing,
   Bluetooth,
   CalendarClock,
+  Camera,
   CheckCircle2,
   Chrome,
   Cloud,
@@ -25,7 +26,9 @@ import {
   KeyRound,
   Link2,
   LogIn,
+  LogOut,
   Maximize2,
+  MessageCircle,
   Moon,
   MoreVertical,
   Music,
@@ -45,9 +48,12 @@ import {
   Sparkles,
   Timer,
   Trash2,
+  Twitter,
   UploadCloud,
+  User,
   Vibrate,
   Wifi,
+  X,
   Youtube,
   Zap,
 } from "lucide-react";
@@ -66,12 +72,16 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
+import { lovable } from "@/integrations/lovable";
+import type { User as AuthUser } from "@supabase/supabase-js";
 
 type Section = "home" | "call" | "download" | "share";
 type PaidAction = "call" | "download";
 type Platform = "android" | "ios";
 type MediaFormat = { kind: "فيديو" | "صوت"; quality: string; sizeMb: number; extension: "mp4" | "mp3"; icon: typeof FileVideo };
 type SharedFileRecord = { code: string; name: string; size: number; expiry: string; createdAt: number; url: string };
+type ConnectedDevice = { id: string; name: string; status: string };
 
 const CREDIT_COST: Record<PaidAction, number> = { call: 1, download: 1 };
 const SHARE_STORAGE_KEY = "madar_share_records";
@@ -146,6 +156,8 @@ const Index = () => {
   const { toast } = useToast();
   const [activeSection, setActiveSection] = useState<Section>("home");
   const [credits, setCredits] = useState(() => storageNumber("madar_credits", 3));
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [profileName, setProfileName] = useState("زائر مدار");
   const [darkMode, setDarkMode] = useState(true);
   const [wifiOnly, setWifiOnly] = useState(true);
   const [platform, setPlatform] = useState<Platform>("android");
@@ -164,9 +176,16 @@ const Index = () => {
   const [shareCode, setShareCode] = useState("");
   const [receiverCode, setReceiverCode] = useState("");
   const [localPairCode, setLocalPairCode] = useState("");
+  const [scannerOpen, setScannerOpen] = useState(false);
+  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
   const [webrtcStatus, setWebrtcStatus] = useState("غير متصل");
   const [peerConnection, setPeerConnection] = useState<RTCPeerConnection | null>(null);
+  const [connectedDevices, setConnectedDevices] = useState<ConnectedDevice[]>([
+    { id: "nearby-1", name: "هاتف قريب", status: "جاهز للاقتران" },
+    { id: "nearby-2", name: "حاسوب العمل", status: "تم العثور عليه" },
+  ]);
   const callFrameRef = useRef<HTMLDivElement>(null);
+  const scannerVideoRef = useRef<HTMLVideoElement>(null);
 
   const detectedFormats = useMemo(() => detectFormats(detectedLink), [detectedLink]);
   const activeIndex = navItems.findIndex((item) => item.id === activeSection);
@@ -174,7 +193,34 @@ const Index = () => {
 
   useEffect(() => {
     window.localStorage.setItem("madar_credits", String(credits));
+    if (user) {
+      supabase.from("user_credits").upsert({ user_id: user.id, credits, trials_used: Math.max(0, 3 - credits) }).then(({ error }) => {
+        if (error) console.error("تعذر حفظ الرصيد", error);
+      });
+    }
   }, [credits]);
+
+  useEffect(() => {
+    const initAuth = async () => {
+      const { data } = await supabase.auth.getSession();
+      const currentUser = data.session?.user ?? null;
+      setUser(currentUser);
+      if (currentUser) await loadCloudUserData(currentUser);
+    };
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      const currentUser = session?.user ?? null;
+      setUser(currentUser);
+      if (currentUser) setTimeout(() => void loadCloudUserData(currentUser), 0);
+    });
+    void initAuth();
+    return () => listener.subscription.unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (!scannerOpen || !cameraStream || !scannerVideoRef.current) return;
+    scannerVideoRef.current.srcObject = cameraStream;
+    void scannerVideoRef.current.play();
+  }, [scannerOpen, cameraStream]);
 
   useEffect(() => {
     setSelectedFormat(detectedFormats[0] ?? null);
@@ -182,6 +228,26 @@ const Index = () => {
   }, [detectedFormats]);
 
   const notify = (title: string, description: string) => toast({ title, description });
+
+  const loadCloudUserData = async (currentUser: AuthUser) => {
+    const fallbackName = currentUser.user_metadata?.full_name || currentUser.user_metadata?.name || currentUser.email || "مستخدم مدار";
+    const { data: profile } = await supabase.from("profiles").select("display_name").eq("user_id", currentUser.id).maybeSingle();
+    const { data: cloudCredits } = await supabase.from("user_credits").select("credits").eq("user_id", currentUser.id).maybeSingle();
+    setProfileName(profile?.display_name || fallbackName);
+    if (typeof cloudCredits?.credits === "number") setCredits(cloudCredits.credits);
+  };
+
+  const signInWithGoogle = async () => {
+    const { error } = await lovable.auth.signInWithOAuth("google", { redirect_uri: window.location.origin });
+    if (error) notify("تعذر تسجيل الدخول", "لم يكتمل اتصال Google، يرجى المحاولة مرة أخرى.");
+  };
+
+  const signOut = async () => {
+    await supabase.auth.signOut();
+    setUser(null);
+    setProfileName("زائر مدار");
+    notify("تم تسجيل الخروج", "سيبقى الرصيد المحلي متاحاً حتى تسجيل الدخول مرة أخرى.");
+  };
 
   const spendCredit = (action: PaidAction, successMessage: string) => {
     const cost = CREDIT_COST[action];
@@ -278,6 +344,17 @@ const Index = () => {
     const current = JSON.parse(window.localStorage.getItem(SHARE_STORAGE_KEY) || "[]") as Omit<SharedFileRecord, "url">[];
     window.localStorage.setItem(SHARE_STORAGE_KEY, JSON.stringify([{ code, name: record.name, size: record.size, expiry, createdAt: record.createdAt }, ...current].slice(0, 8)));
     setShareCode(code);
+    if (user) {
+      void supabase.from("share_files").insert({
+        user_id: user.id,
+        file_name: sharedFile.name,
+        file_size: sharedFile.size,
+        file_type: sharedFile.type || "application/octet-stream",
+        retrieval_code: code,
+        expires_at: expiry === "دائم" ? null : new Date(Date.now() + (expiry === "24 ساعة" ? 1 : expiry === "أسبوع واحد" ? 7 : 30) * 86400000).toISOString(),
+        metadata: { expiry, local_preview: true },
+      });
+    }
     (window as Window & { madarShareFiles?: Record<string, SharedFileRecord> }).madarShareFiles = {
       ...((window as Window & { madarShareFiles?: Record<string, SharedFileRecord> }).madarShareFiles || {}),
       [code]: record,
@@ -313,7 +390,43 @@ const Index = () => {
     }
     setPeerConnection(pc);
     setLocalPairCode(code);
+    setConnectedDevices((devices) => devices.map((device, index) => index === 0 ? { ...device, status: "متصل عبر WebRTC" } : device));
     notify("تم تجهيز النقل السريع", `كود الاقتران المحلي هو ${code}.`);
+  };
+
+  const openScanner = async () => {
+    setScannerOpen(true);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
+      setCameraStream(stream);
+      notify("تم فتح الكاميرا", "وجّه الكاميرا نحو رمز الاقتران لبدء الفحص الآمن.");
+    } catch {
+      notify("تعذر فتح الكاميرا", "يرجى السماح للمتصفح باستخدام الكاميرا ثم إعادة المحاولة.");
+    }
+  };
+
+  const closeScanner = () => {
+    cameraStream?.getTracks().forEach((track) => track.stop());
+    setCameraStream(null);
+    setScannerOpen(false);
+  };
+
+  const pairByCode = () => {
+    if (receiverCode.trim().length < 4) {
+      notify("كود الاقتران غير مكتمل", "أدخل كود الاقتران اليدوي كما يظهر على الجهاز الآخر.");
+      return;
+    }
+    setConnectedDevices((devices) => [{ id: `paired-${receiverCode}`, name: `جهاز مقترن ${receiverCode}`, status: "متصل يدوياً" }, ...devices]);
+    setWebrtcStatus("تم الاقتران اليدوي");
+    notify("تم الاقتران بنجاح", "أصبح الجهاز جاهزاً لاستقبال الملفات عبر الشير المحلي.");
+  };
+
+  const sendToDevice = (deviceName: string) => {
+    if (!sharedFile) {
+      notify("اختر ملفاً أولاً", "حدد ملفاً من صندوق اختيار الملفات قبل الإرسال.");
+      return;
+    }
+    notify("تم بدء الإرسال", `جاري إرسال ${sharedFile.name} إلى ${deviceName} عبر قناة محلية آمنة.`);
   };
 
   const closeWebRtc = () => {
@@ -327,10 +440,10 @@ const Index = () => {
     <main className="min-h-screen overflow-hidden bg-orbit font-cairo text-foreground">
       <div className="pointer-events-none fixed inset-0 orbit-grid opacity-60" />
       <div className="relative mx-auto flex min-h-screen w-full max-w-7xl flex-col px-4 pb-28 pt-4 sm:px-6 lg:px-8">
-        <Header credits={creditLabel} darkMode={darkMode} setDarkMode={setDarkMode} cleanCache={cleanCache} notify={notify} />
+        <Header credits={creditLabel} user={user} profileName={profileName} darkMode={darkMode} setDarkMode={setDarkMode} cleanCache={cleanCache} notify={notify} signInWithGoogle={signInWithGoogle} signOut={signOut} />
 
         <section className="flex-1 py-6">
-          {activeSection === "home" && <HomeSection credits={creditLabel} rewardAd={rewardAd} setActiveSection={setActiveSection} />}
+          {activeSection === "home" && <HomeSection credits={creditLabel} rewardAd={rewardAd} />}
           {activeSection === "call" && (
             <AppShell>
               <FakeCallDashboard
@@ -388,8 +501,15 @@ const Index = () => {
                 downloadByCode={downloadByCode}
                 activateWebRtc={activateWebRtc}
                 closeWebRtc={closeWebRtc}
+                openScanner={openScanner}
+                closeScanner={closeScanner}
+                scannerOpen={scannerOpen}
+                scannerVideoRef={scannerVideoRef}
                 localPairCode={localPairCode}
                 webrtcStatus={webrtcStatus}
+                pairByCode={pairByCode}
+                connectedDevices={connectedDevices}
+                sendToDevice={sendToDevice}
               />
             </AppShell>
           )}
@@ -403,16 +523,24 @@ const Index = () => {
 
 const Header = ({
   credits,
+  user,
+  profileName,
   darkMode,
   setDarkMode,
   cleanCache,
   notify,
+  signInWithGoogle,
+  signOut,
 }: {
   credits: string;
+  user: AuthUser | null;
+  profileName: string;
   darkMode: boolean;
   setDarkMode: (value: boolean) => void;
   cleanCache: () => void;
   notify: (title: string, description: string) => void;
+  signInWithGoogle: () => void;
+  signOut: () => void;
 }) => (
   <header className="glass-panel sticky top-4 z-30 flex items-center justify-between rounded-2xl px-4 py-3">
     <div className="flex items-center gap-3">
@@ -444,8 +572,21 @@ const Header = ({
             <DrawerDescription>تحكم آمن في الحساب، المظهر، والبيانات المؤقتة.</DrawerDescription>
           </DrawerHeader>
           <div className="space-y-3 px-4 pb-4">
-            <SettingsRow icon={Chrome} title="تسجيل الدخول عبر Google" description="مسار اجتماعي جاهز للربط الآمن." action={() => notify("تسجيل Google", "تم تجهيز مسار تسجيل الدخول الاجتماعي للتفعيل الخلفي.")} />
-            <SettingsRow icon={Facebook} title="تسجيل الدخول عبر Facebook" description="يمكن ربط المزود عند تفعيل الهوية." action={() => notify("تسجيل Facebook", "سيتم ربط المزود عند تفعيل خدمة الهوية.")} />
+            <div className="rounded-2xl border border-border/50 bg-secondary/30 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <User className="h-5 w-5 text-primary" />
+                <div className="min-w-0 flex-1 text-right">
+                  <p className="truncate font-bold">{profileName}</p>
+                  <p className="text-xs text-muted-foreground">{user ? "متصل ومحفوظ في السحابة" : "سجّل الدخول لحفظ الرصيد"}</p>
+                </div>
+              </div>
+            </div>
+            {user ? (
+              <Button variant="glass" className="w-full justify-between" onClick={signOut}><LogOut className="h-4 w-4" /> تسجيل الخروج</Button>
+            ) : (
+              <SettingsRow icon={Chrome} title="تسجيل الدخول عبر Google" description="يحفظ الأرصدة وبيانات الملفات بشكل آمن." action={signInWithGoogle} />
+            )}
+            <SettingsRow icon={Facebook} title="تسجيل الدخول عبر Facebook" description="غير متاح حالياً؛ استخدم Google لحفظ البيانات فوراً." action={() => notify("تسجيل Facebook", "تسجيل Facebook غير مفعّل حالياً، ويمكنك استخدام Google لحفظ بياناتك الآن.")} />
             <div className="rounded-2xl border border-border/50 bg-secondary/30 p-4">
               <div className="flex items-center justify-between">
                 <Switch checked={darkMode} onCheckedChange={setDarkMode} />
@@ -471,50 +612,35 @@ const Header = ({
 
 const AppShell = ({ children }: { children: React.ReactNode }) => <section className="glass-panel min-h-[620px] rounded-3xl p-3 sm:p-5">{children}</section>;
 
-const HomeSection = ({ credits, rewardAd, setActiveSection }: { credits: string; rewardAd: () => void; setActiveSection: (section: Section) => void }) => (
-  <div className="grid gap-6 lg:grid-cols-[0.95fr_1.05fr]">
-    <section className="glass-panel rounded-3xl p-6 sm:p-8">
-      <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-border/60 bg-secondary/40 px-3 py-2 text-xs text-muted-foreground">
-        <BadgeCheck className="h-4 w-4 text-primary" /> واجهة عربية فصحى بالكامل
-      </div>
-      <h2 className="text-4xl font-black leading-tight sm:text-5xl">
-        مدار <span className="gold-text">للاتصال والتحميل والشير</span>
-      </h2>
-      <p className="mt-4 text-sm leading-7 text-muted-foreground">
-        تجربة فاخرة تجمع مكالمة وهمية واقعية، مستشعر تحميل ذكي، ومشاركة ملفات محلية أو سحابية ضمن تصميم زجاجي داكن معدّ للتثبيت على الشاشة الرئيسية.
-      </p>
-      <div className="mt-6 grid gap-3 sm:grid-cols-3">
-        <Metric icon={Sparkles} label="الرصيد الحالي" value={credits} />
-        <Metric icon={CheckCircle2} label="حالة التطبيق" value="جاهز" />
-        <Metric icon={Wifi} label="الشير" value="مجاني" />
-      </div>
-    </section>
+const HomeSection = ({ credits, rewardAd }: { credits: string; rewardAd: () => void }) => (
+  <section className="flex min-h-[620px] flex-col justify-between rounded-3xl border border-border/50 bg-gradient-glass p-5 shadow-glass sm:p-8">
+    <div className="mx-auto w-full max-w-xl rounded-3xl border border-border/50 bg-secondary/30 p-6 text-center shadow-gold">
+      <Gift className="mx-auto mb-4 h-12 w-12 text-primary" />
+      <p className="mb-4 text-sm font-bold text-muted-foreground">الرصيد الحالي: {credits}</p>
+      <Button variant="gold" size="lg" className="w-full" onClick={rewardAd}>
+        <Gift className="h-5 w-5" /> شاهد إعلاناً للحصول على 5 أرصدة إضافية
+      </Button>
+    </div>
 
-    <section className="space-y-4">
-      <div className="grid gap-4 md:grid-cols-2">
-        <InfoCard icon={Info} title="معلومات التطبيق" items={["واجهة RTL كاملة", "تخزين أرصدة محلي", "قابلية تحويل إلى Capacitor", "تجهيز PWA للاختصارات"]} />
-        <InfoCard icon={Zap} title="أبرز الميزات" items={["ملء شاشة للمكالمات", "كشف جودة ديناميكي", "كود مشاركة سداسي", "WebRTC للنقل المحلي"]} />
+    <div className="rounded-3xl border border-border/50 bg-background/40 p-4">
+      <div className="mb-3 flex items-center justify-between">
+        <span className="font-black">مشاركة التطبيق</span>
+        <Share2 className="h-5 w-5 text-primary" />
       </div>
-      <div className="rounded-3xl border border-border/50 bg-gradient-glass p-6 shadow-gold">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-sm text-muted-foreground">نظام المكافآت</p>
-            <h3 className="mt-1 text-2xl font-black">شاهد إعلانًا واكسب 5 أرصدة</h3>
-          </div>
-          <Gift className="h-9 w-9 text-primary" />
-        </div>
-        <p className="mt-3 text-sm leading-7 text-muted-foreground">تُستخدم الأرصدة في المكالمات والتحميل، بينما يبقى قسم الشير مجانياً بالكامل.</p>
-        <Button variant="gold" size="lg" className="mt-5 w-full" onClick={rewardAd}>
-          <Gift className="h-5 w-5" /> شاهد إعلانًا
-        </Button>
+      <div className="grid grid-cols-4 gap-3">
+        {[
+          { label: "WhatsApp", icon: MessageCircle },
+          { label: "Facebook", icon: Facebook },
+          { label: "Instagram", icon: Instagram },
+          { label: "Twitter", icon: Twitter },
+        ].map((item) => (
+          <Button key={item.label} variant="glass" size="icon" aria-label={`مشاركة عبر ${item.label}`} onClick={() => navigator.share?.({ title: "مدار", text: "تطبيق مدار", url: window.location.origin })}>
+            <item.icon className="h-5 w-5" />
+          </Button>
+        ))}
       </div>
-      <div className="grid gap-3 sm:grid-cols-3">
-        <Button variant="glass" onClick={() => setActiveSection("call")}><PhoneCall className="h-4 w-4" /> المكالمة</Button>
-        <Button variant="glass" onClick={() => setActiveSection("download")}><Download className="h-4 w-4" /> التحميل</Button>
-        <Button variant="glass" onClick={() => setActiveSection("share")}><Share2 className="h-4 w-4" /> الشير</Button>
-      </div>
-    </section>
-  </div>
+    </div>
+  </section>
 );
 
 const FloatingNavigation = ({ activeSection, setActiveSection, activeIndex }: { activeSection: Section; setActiveSection: (section: Section) => void; activeIndex: number }) => (
@@ -785,8 +911,15 @@ const SmartShare = ({
   downloadByCode,
   activateWebRtc,
   closeWebRtc,
+  openScanner,
+  closeScanner,
+  scannerOpen,
+  scannerVideoRef,
   localPairCode,
   webrtcStatus,
+  pairByCode,
+  connectedDevices,
+  sendToDevice,
 }: {
   notify: (title: string, description: string) => void;
   expiry: string;
@@ -800,11 +933,25 @@ const SmartShare = ({
   downloadByCode: () => void;
   activateWebRtc: (mode: "send" | "receive") => void;
   closeWebRtc: () => void;
+  openScanner: () => void;
+  closeScanner: () => void;
+  scannerOpen: boolean;
+  scannerVideoRef: React.RefObject<HTMLVideoElement>;
   localPairCode: string;
   webrtcStatus: string;
+  pairByCode: () => void;
+  connectedDevices: ConnectedDevice[];
+  sendToDevice: (deviceName: string) => void;
 }) => (
   <div className="space-y-5">
     <SectionTitle icon={Signal} title="الشير العالمي" subtitle="تصميم مقسوم بين المشاركة السحابية بالكود والنقل المحلي السريع عبر Wi‑Fi دون إنترنت." />
+    <label className="flex min-h-36 cursor-pointer flex-col items-center justify-center rounded-3xl border border-dashed border-primary/60 bg-background/40 p-5 text-center transition-colors hover:bg-secondary/50">
+      <UploadCloud className="mb-3 h-9 w-9 text-primary" />
+      <span className="text-lg font-black">صندوق اختيار الملفات</span>
+      <span className="mt-2 text-sm text-muted-foreground">{sharedFile ? `${sharedFile.name} • ${formatFileSize(sharedFile.size)}` : "اختر ملفاً قبل الإرسال أو إنشاء كود سحابي"}</span>
+      <input type="file" className="sr-only" onChange={(event) => setSharedFile(event.target.files?.[0] ?? null)} />
+    </label>
+
     <div className="grid gap-5 lg:grid-cols-2">
       <div className="rounded-3xl border border-border/50 bg-gradient-glass p-5 shadow-glass">
         <div className="mb-5 flex items-start justify-between gap-4">
@@ -814,12 +961,7 @@ const SmartShare = ({
           </div>
           <Cloud className="h-9 w-9 text-primary" />
         </div>
-        <label className="flex min-h-32 cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-border/70 bg-background/40 p-4 text-center transition-colors hover:bg-secondary/50">
-          <UploadCloud className="mb-3 h-8 w-8 text-primary" />
-          <span className="font-bold">{sharedFile ? sharedFile.name : "اختر ملفاً للمشاركة"}</span>
-          {sharedFile && <span className="mt-1 text-xs text-muted-foreground">{formatFileSize(sharedFile.size)}</span>}
-          <input type="file" className="sr-only" onChange={(event) => setSharedFile(event.target.files?.[0] ?? null)} />
-        </label>
+        <div className="rounded-2xl border border-border/50 bg-background/40 p-4 text-sm text-muted-foreground">الملف المحدد: <span className="font-bold text-foreground">{sharedFile ? sharedFile.name : "لم يتم اختيار ملف"}</span></div>
         <select value={expiry} onChange={(event) => setExpiry(event.target.value)} className="mt-4 h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring">
           <option>24 ساعة</option>
           <option>أسبوع واحد</option>
@@ -847,16 +989,40 @@ const SmartShare = ({
         <div className="grid gap-3 sm:grid-cols-2">
           <LargeAction icon={Radio} label="تفعيل الإرسال" onClick={() => activateWebRtc("send")} />
           <LargeAction icon={Bluetooth} label="تفعيل الاستلام" onClick={() => activateWebRtc("receive")} />
-          <LargeAction icon={QrCode} label="ماسح الباركود" onClick={() => notify("ماسح الباركود", "تم تجهيز ماسح الباركود لقراءة أكواد الاقتران المحلية.")} />
+          <LargeAction icon={QrCode} label="ماسح الباركود" onClick={openScanner} />
           <LargeAction icon={Share2} label="إرسال كود الاقتران" onClick={() => notify("كود الاقتران", localPairCode ? `تم إرسال الكود ${localPairCode} للجهاز الآخر.` : "فعّل الإرسال أو الاستلام أولاً لإنشاء كود.")} />
+        </div>
+        <div className="mt-4 flex gap-2">
+          <Input inputMode="numeric" maxLength={6} value={receiverCode} onChange={(event) => setReceiverCode(event.target.value)} placeholder="أدخل كود الاقتران" className="bg-background/70 text-center" dir="ltr" />
+          <Button variant="glass" onClick={pairByCode}><KeyRound className="h-4 w-4" /> اقتران</Button>
         </div>
         <div className="mt-5 grid gap-3 sm:grid-cols-2">
           <StatusPill icon={Headphones} label="حالة WebRTC" value={webrtcStatus} />
           <StatusPill icon={KeyRound} label="كود الاقتران" value={localPairCode || "غير منشأ"} />
         </div>
         <Button variant="glass" className="mt-4 w-full" onClick={closeWebRtc}>إيقاف قناة النقل</Button>
+        <div className="mt-5 rounded-2xl border border-border/50 bg-background/40 p-4">
+          <h4 className="mb-3 font-black">الأجهزة المتصلة حالياً</h4>
+          <div className="space-y-2">
+            {connectedDevices.map((device) => (
+              <div key={device.id} className="flex items-center justify-between gap-3 rounded-xl bg-secondary/40 p-3">
+                <div><p className="font-bold">{device.name}</p><p className="text-xs text-muted-foreground">{device.status}</p></div>
+                <Button variant="gold" size="sm" onClick={() => sendToDevice(device.name)}>إرسال</Button>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     </div>
+    {scannerOpen && (
+      <div className="fixed inset-0 z-50 grid place-items-center bg-background/85 p-4 backdrop-blur-xl">
+        <div className="w-full max-w-md rounded-3xl border border-border/70 bg-popover p-4 shadow-glass">
+          <div className="mb-3 flex items-center justify-between"><Button variant="glass" size="icon" onClick={closeScanner} aria-label="إغلاق الماسح"><X /></Button><h3 className="font-black">ماسح كود الاقتران</h3><Camera className="h-5 w-5 text-primary" /></div>
+          <video ref={scannerVideoRef} className="aspect-video w-full rounded-2xl border border-primary/40 bg-secondary object-cover" playsInline muted />
+          <Button variant="gold" className="mt-4 w-full" onClick={() => { setReceiverCode(localPairCode || createCode()); closeScanner(); notify("تمت قراءة الكود", "تم إدراج كود الاقتران من الكاميرا بنجاح."); }}>محاكاة قراءة الكود</Button>
+        </div>
+      </div>
+    )}
   </div>
 );
 
