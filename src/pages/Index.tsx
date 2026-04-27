@@ -1256,6 +1256,114 @@ const SmartShare = ({
   </div>
 );
 
+const PrivacyVault = ({
+  vaultUnlocked,
+  setVaultUnlocked,
+  pinEntry,
+  setPinEntry,
+  patternEntry,
+  setPatternEntry,
+  hasPin,
+  unlockVaultWithPin,
+  unlockVaultWithBiometric,
+  ghostMode,
+  setGhostMode,
+  vaultFiles,
+  addVaultFiles,
+  lockedApps,
+  toggleAppLock,
+  notify,
+}: {
+  vaultUnlocked: boolean;
+  setVaultUnlocked: (value: boolean) => void;
+  pinEntry: string;
+  setPinEntry: (value: string) => void;
+  patternEntry: string;
+  setPatternEntry: (value: string) => void;
+  hasPin: boolean;
+  unlockVaultWithPin: () => void;
+  unlockVaultWithBiometric: () => void;
+  ghostMode: boolean;
+  setGhostMode: (value: boolean) => void;
+  vaultFiles: VaultFile[];
+  addVaultFiles: (files: FileList | null) => void;
+  lockedApps: string[];
+  toggleAppLock: (appName: string) => void;
+  notify: (title: string, description: string) => void;
+}) => (
+  <div className="space-y-5">
+    <SectionTitle icon={LockKeyhole} title="مخزن الخصوصية" subtitle="قفل ذكي للصور والفيديوهات والمستندات مع وضع إخفاء ومحاكاة حماية التطبيقات." />
+    {!vaultUnlocked ? (
+      <div className="grid gap-5 lg:grid-cols-[1fr_0.85fr]">
+        <div className="rounded-3xl border border-primary/40 bg-gradient-glass p-6 shadow-gold">
+          <div className="mb-5 flex h-20 w-20 items-center justify-center rounded-2xl bg-gradient-gold text-primary-foreground shadow-gold"><Lock className="h-10 w-10" /></div>
+          <h3 className="text-3xl font-black gold-text">الخزنة مقفلة</h3>
+          <p className="mt-3 text-sm leading-7 text-muted-foreground">استخدم رمز PIN أو النمط أو المصادقة الحيوية لفتح المنطقة الآمنة. عند أول استخدام، سيصبح رمز PIN الذي تدخله هو رمزك الدائم.</p>
+          <div className="mt-5 grid gap-3 sm:grid-cols-2">
+            <Input inputMode="numeric" maxLength={8} value={pinEntry} onChange={(event) => setPinEntry(event.target.value)} placeholder={hasPin ? "أدخل PIN" : "أنشئ PIN جديد"} className="bg-background/70 text-center" dir="ltr" />
+            <Input value={patternEntry} onChange={(event) => setPatternEntry(event.target.value)} placeholder="النمط: ١-٢-٣-٦" className="bg-background/70 text-center" />
+          </div>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <Button variant="gold" onClick={unlockVaultWithPin}><KeyRound className="h-4 w-4" /> فتح المخزن</Button>
+            <Button variant="glass" onClick={unlockVaultWithBiometric}><Fingerprint className="h-4 w-4" /> تحقق حيوي</Button>
+          </div>
+        </div>
+        <div className="rounded-3xl border border-border/50 bg-secondary/30 p-5">
+          <div className="grid grid-cols-3 gap-2">
+            {["١", "٢", "٣", "٤", "٥", "٦", "٧", "٨", "٩"].map((node) => <div key={node} className="grid aspect-square place-items-center rounded-2xl border border-border/50 bg-background/45 text-xl font-black text-primary">{node}</div>)}
+          </div>
+        </div>
+      </div>
+    ) : (
+      <div className="grid gap-5 xl:grid-cols-[1fr_0.9fr]">
+        <div className="space-y-5">
+          <div className="rounded-3xl border border-border/50 bg-gradient-glass p-5 shadow-glass">
+            <div className="flex items-center justify-between gap-4">
+              <div><h3 className="text-2xl font-black">قفل الملفات</h3><p className="mt-1 text-sm text-muted-foreground">الصور والفيديوهات والمستندات تحفظ في قائمة محلية مشفرة لمحاكاة مساحة التطبيق الآمنة.</p></div>
+              <ShieldCheck className="h-9 w-9 text-primary" />
+            </div>
+            <label className="mt-5 flex min-h-32 cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-primary/60 bg-background/40 p-5 text-center hover:bg-secondary/50">
+              <FolderOpen className="mb-3 h-9 w-9 text-primary" />
+              <span className="font-black">إضافة ملفات إلى المخزن</span>
+              <span className="mt-2 text-xs leading-6 text-muted-foreground">يدعم الصور والفيديوهات والمستندات للاختبار الفوري داخل المتصفح.</span>
+              <input type="file" multiple accept="image/*,video/*,.pdf,.doc,.docx,.txt" className="sr-only" onChange={(event) => addVaultFiles(event.target.files)} />
+            </label>
+            <div className="mt-4 flex items-center justify-between rounded-2xl border border-primary/40 bg-primary/10 p-4">
+              <Switch checked={ghostMode} onCheckedChange={setGhostMode} />
+              <span className="flex items-center gap-2 font-black"><Moon className="h-4 w-4 text-primary" /> إخفاء الملفات</span>
+            </div>
+          </div>
+          <div className="rounded-3xl border border-border/50 bg-background/40 p-4">
+            <h4 className="mb-3 font-black">الملفات المحمية</h4>
+            <div className="space-y-2">
+              {vaultFiles.length ? vaultFiles.map((file) => (
+                <div key={file.id} className="flex items-center justify-between gap-3 rounded-2xl bg-secondary/40 p-3">
+                  <div><p className="font-bold">{file.name}</p><p className="text-xs text-muted-foreground">{formatFileSize(file.size)} • {file.hidden ? "مخفي داخل التطبيق" : "ظاهر داخل المخزن"}</p></div>
+                  <Lock className="h-5 w-5 text-primary" />
+                </div>
+              )) : <p className="rounded-2xl border border-border/50 bg-secondary/30 p-4 text-sm text-muted-foreground">لا توجد ملفات داخل المخزن بعد.</p>}
+            </div>
+          </div>
+        </div>
+        <div className="space-y-5">
+          <div className="rounded-3xl border border-border/50 bg-gradient-glass p-5 shadow-glass">
+            <h3 className="text-2xl font-black">قفل التطبيقات</h3>
+            <p className="mt-2 text-sm leading-7 text-muted-foreground">اختر تطبيقات للحماية ضمن محاكاة مرئية جاهزة للتوسعة عند تحويل التطبيق إلى Capacitor.</p>
+            <div className="mt-4 grid grid-cols-2 gap-3">
+              {simulatedApps.map((appName) => <Button key={appName} variant={lockedApps.includes(appName) ? "gold" : "glass"} onClick={() => toggleAppLock(appName)}><Shield className="h-4 w-4" /> {appName}</Button>)}
+            </div>
+          </div>
+          <div className="rounded-3xl border border-border/50 bg-secondary/30 p-5">
+            <h3 className="text-2xl font-black">الخروج الآمن</h3>
+            <p className="mt-2 text-sm leading-7 text-muted-foreground">عند قلب الهاتف ووجهه للأسفل يتم قفل المخزن فوراً إذا كان المتصفح يتيح مستشعرات الاتجاه.</p>
+            <Button variant="glass" className="mt-4 w-full" onClick={() => { setVaultUnlocked(false); notify("تم قفل المخزن", "أُغلق مخزن الخصوصية يدوياً بنجاح."); }}><LockKeyhole className="h-4 w-4" /> قفل فوري</Button>
+          </div>
+        </div>
+      </div>
+    )}
+  </div>
+);
+
 const SectionTitle = ({ icon: Icon, title, subtitle }: { icon: typeof Phone; title: string; subtitle: string }) => (
   <div className="flex items-start justify-between gap-4">
     <div>
