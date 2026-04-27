@@ -956,6 +956,9 @@ const DownloaderHub = ({
               <span className="flex items-center gap-2"><Download className="h-4 w-4" /> عرض الجودات المتاحة</span>
               <span>{detectedFormats.length} صيغة</span>
             </Button>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {detectedFormats.map((row) => <button key={`chip-${row.kind}-${row.quality}`} onClick={() => setSelectedFormat(row)} className={`rounded-full border px-3 py-1 text-xs font-black transition-transform hover:-translate-y-0.5 ${selectedFormat?.quality === row.quality && selectedFormat?.kind === row.kind ? "border-primary bg-primary text-primary-foreground" : "border-primary/40 bg-primary/10 text-primary"}`}>{row.kind} {row.quality}</button>)}
+            </div>
             <div className={`grid overflow-hidden transition-all duration-300 ${qualitiesOpen ? "mt-3 max-h-[32rem] gap-2 opacity-100" : "max-h-0 gap-0 opacity-0"}`}>
               {detectedFormats.map((row) => {
                 const Icon = row.icon;
@@ -1097,6 +1100,12 @@ const SmartShare = ({
           </div>
           <Wifi className="h-9 w-9 text-primary" />
         </div>
+        <label onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); setSharedFile(event.dataTransfer.files?.[0] ?? null); }} className="mb-4 flex min-h-32 cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-primary/60 bg-background/40 p-4 text-center transition-colors hover:bg-secondary/50">
+          <FileArchive className="mb-2 h-8 w-8 text-primary" />
+          <span className="font-black">اختيار ملف للنقل القريب</span>
+          <span className="mt-2 text-xs leading-6 text-muted-foreground">{sharedFile ? `${sharedFile.name} • ${formatFileSize(sharedFile.size)} • جاهز للمعاينة والإرسال` : "اسحب ملفاً هنا أو اضغط لاختياره قبل الإرسال"}</span>
+          <input type="file" className="sr-only" onChange={(event) => setSharedFile(event.target.files?.[0] ?? null)} />
+        </label>
         <div className="grid gap-3 sm:grid-cols-2">
           <LargeAction icon={Radio} label="تفعيل الإرسال" onClick={() => activateWebRtc("send")} />
           <LargeAction icon={Bluetooth} label="تفعيل الاستلام" onClick={() => activateWebRtc("receive")} />
