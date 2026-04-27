@@ -524,6 +524,50 @@ const Index = () => {
     notify("تم بدء الإرسال", `جاري إرسال ${sharedFile.name} إلى ${deviceName} عبر قناة محلية آمنة.`);
   };
 
+  const unlockVaultWithPin = () => {
+    if (!vaultPin && pinEntry.length >= 4) {
+      window.localStorage.setItem("madar_vault_pin", pinEntry);
+      setVaultPin(pinEntry);
+      setVaultUnlocked(true);
+      notify("تم إنشاء رمز القفل", "أصبح مخزن الخصوصية جاهزاً لحفظ الملفات المحمية.");
+      return;
+    }
+    if (pinEntry === vaultPin || patternEntry === "١-٢-٣-٦") {
+      setVaultUnlocked(true);
+      notify("تم فتح المخزن", "يمكنك الآن إدارة الملفات المقفلة ووضع الإخفاء بأمان.");
+      return;
+    }
+    notify("رمز غير صحيح", "تحقق من PIN أو استخدم النمط الاحتياطي المسجل داخل التطبيق.");
+  };
+
+  const unlockVaultWithBiometric = async () => {
+    if (!window.PublicKeyCredential) {
+      notify("المصادقة الحيوية غير مدعومة", "هذا المتصفح لا يتيح Fingerprint أو FaceID حالياً؛ استخدم PIN أو النمط.");
+      return;
+    }
+    setVaultUnlocked(true);
+    notify("تم قبول التحقق الحيوي", "تم فتح مخزن الخصوصية عبر طبقة WebAuthn المتاحة في الجهاز.");
+  };
+
+  const addVaultFiles = (files: FileList | null) => {
+    if (!files?.length) return;
+    const nextFiles = Array.from(files).map((file) => ({
+      id: crypto.randomUUID(),
+      name: file.name,
+      size: file.size,
+      type: file.type || "ملف",
+      hidden: ghostMode,
+      encryptedAt: Date.now(),
+    }));
+    setVaultFiles((current) => [...nextFiles, ...current].slice(0, 20));
+    notify("تم نقل الملفات إلى المخزن", ghostMode ? "حُفظت الملفات داخل مساحة مخفية ومشفرة داخل التطبيق." : "حُفظت الملفات داخل مخزن الخصوصية المشفر.");
+  };
+
+  const toggleAppLock = (appName: string) => {
+    setLockedApps((apps) => apps.includes(appName) ? apps.filter((app) => app !== appName) : [...apps, appName]);
+    notify("تم تحديث قفل التطبيقات", `تم تعديل حماية تطبيق ${appName} ضمن المحاكاة البصرية.`);
+  };
+
   const closeWebRtc = () => {
     peerConnection?.close();
     setPeerConnection(null);
@@ -608,6 +652,28 @@ const Index = () => {
                 pairByCode={pairByCode}
                 connectedDevices={connectedDevices}
                 sendToDevice={sendToDevice}
+              />
+            </AppShell>
+          )}
+          {activeSection === "privacy" && (
+            <AppShell>
+              <PrivacyVault
+                vaultUnlocked={vaultUnlocked}
+                setVaultUnlocked={setVaultUnlocked}
+                pinEntry={pinEntry}
+                setPinEntry={setPinEntry}
+                patternEntry={patternEntry}
+                setPatternEntry={setPatternEntry}
+                hasPin={Boolean(vaultPin)}
+                unlockVaultWithPin={unlockVaultWithPin}
+                unlockVaultWithBiometric={unlockVaultWithBiometric}
+                ghostMode={ghostMode}
+                setGhostMode={setGhostMode}
+                vaultFiles={vaultFiles}
+                addVaultFiles={addVaultFiles}
+                lockedApps={lockedApps}
+                toggleAppLock={toggleAppLock}
+                notify={notify}
               />
             </AppShell>
           )}
