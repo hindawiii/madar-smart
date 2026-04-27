@@ -15,6 +15,7 @@ import {
   FileAudio,
   FileDown,
   FileVideo,
+  Fingerprint,
   FolderOpen,
   Gauge,
   Gift,
@@ -26,6 +27,8 @@ import {
   Instagram,
   KeyRound,
   Link2,
+  Lock,
+  LockKeyhole,
   LogIn,
   LogOut,
   Maximize2,
@@ -44,6 +47,7 @@ import {
   Settings,
   Share2,
   Shield,
+  ShieldCheck,
   Signal,
   Smartphone,
   Sparkles,
@@ -77,22 +81,27 @@ import { supabase } from "@/integrations/supabase/client";
 import { lovable } from "@/integrations/lovable";
 import type { User as AuthUser } from "@supabase/supabase-js";
 
-type Section = "home" | "call" | "download" | "share";
+type Section = "home" | "call" | "download" | "share" | "privacy";
 type PaidAction = "call" | "download";
 type Platform = "android" | "ios";
 type MediaFormat = { kind: "فيديو" | "صوت"; quality: string; sizeMb: number; extension: "mp4" | "mp3"; icon: typeof FileVideo };
 type SharedFileRecord = { code: string; name: string; size: number; expiry: string; createdAt: number; url: string };
 type ConnectedDevice = { id: string; name: string; status: string };
+type VaultFile = { id: string; name: string; size: number; type: string; hidden: boolean; encryptedAt: number };
 
 const CREDIT_COST: Record<PaidAction, number> = { call: 1, download: 1 };
 const SHARE_STORAGE_KEY = "madar_share_records";
+const VAULT_STORAGE_KEY = "madar_privacy_vault";
 
 const navItems: Array<{ id: Section; label: string; icon: typeof PhoneCall }> = [
   { id: "home", label: "الرئيسية", icon: Radar },
   { id: "call", label: "مكالمة وهمية", icon: PhoneCall },
   { id: "download", label: "التحميل", icon: Download },
   { id: "share", label: "الشير", icon: Signal },
+  { id: "privacy", label: "الخصوصية", icon: LockKeyhole },
 ];
+
+const simulatedApps = ["الصور", "الرسائل", "المتصفح", "المعرض", "الملفات", "البريد"];
 
 const downloadedFiles = [
   { title: "مقطع تعليمي عالي الدقة", type: "فيديو", size: "386 م.ب", source: "يوتيوب", tone: "bg-primary/15" },
