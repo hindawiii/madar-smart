@@ -749,12 +749,15 @@ const FakeCallDashboard = ({
   customRingtone,
   setRingtone,
   handleRingtoneUpload,
+  customTones,
+  timerCountdown,
+  startScheduledCall,
   callFrameRef,
 }: {
   platform: Platform;
   setPlatform: (platform: Platform) => void;
   callStatus: string;
-  startCall: () => void;
+  startCall: () => void | Promise<void>;
   declineCall: () => void;
   callDelay: string;
   setCallDelay: (value: string) => void;
@@ -766,6 +769,9 @@ const FakeCallDashboard = ({
   customRingtone: string;
   setRingtone: (value: string) => void;
   handleRingtoneUpload: (event: ChangeEvent<HTMLInputElement>) => void;
+  customTones: string[];
+  timerCountdown: number | null;
+  startScheduledCall: () => void;
   callFrameRef: React.RefObject<HTMLDivElement>;
 }) => (
   <div className="grid gap-5 lg:grid-cols-[1fr_0.86fr]">
@@ -773,6 +779,10 @@ const FakeCallDashboard = ({
       <SectionTitle icon={Phone} title="لوحة المكالمة الوهمية" subtitle="تحكم كامل في التوقيت، النظام، الرنين، الاهتزاز، وملء الشاشة الواقعي." />
       <Button variant="gold" size="lg" className="w-full" onClick={startCall}>
         <Maximize2 className="h-5 w-5" /> ابدأ المكالمة بملء الشاشة
+      </Button>
+      <Button variant="glass" size="lg" className="w-full justify-between" onClick={startScheduledCall}>
+        <span className="flex items-center gap-2"><Timer className="h-5 w-5" /> تفعيل المؤقت</span>
+        <span>{timerCountdown === null ? `${callDelay} دقائق` : `${timerCountdown} ثانية`}</span>
       </Button>
       <ControlPanel title="جدولة المكالمة" icon={CalendarClock}>
         <div className="grid grid-cols-3 gap-2">
@@ -809,6 +819,7 @@ const FakeCallDashboard = ({
           </label>
         </div>
         {customRingtone && <p className="mt-2 text-xs text-muted-foreground">النغمة الحالية: {customRingtone}</p>}
+        {!!customTones.length && <div className="mt-3 flex flex-wrap gap-2">{customTones.map((tone) => <span key={tone} className="rounded-full border border-primary/40 bg-primary/10 px-3 py-1 text-xs font-bold text-primary">{tone}</span>)}</div>}
       </ControlPanel>
     </div>
     <div className="mx-auto w-full max-w-sm">
