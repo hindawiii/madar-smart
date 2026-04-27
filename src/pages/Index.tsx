@@ -356,6 +356,25 @@ const Index = () => {
     }
   };
 
+  const triggerScheduledCall = async () => {
+    setActiveSection("call");
+    setCallStatus("انتهى المؤقت — المكالمة الوهمية جاهزة الآن بملء الشاشة");
+    navigator.vibrate?.([260, 90, 260, 90, 420]);
+    if ("Notification" in window && Notification.permission === "granted") {
+      const notification = new Notification("مكالمة وهمية جاهزة", {
+        body: "اضغط لفتح شاشة المكالمة في مدار فوراً.",
+        tag: "madar-fake-call",
+        requireInteraction: true,
+      });
+      notification.onclick = () => {
+        window.focus();
+        setActiveSection("call");
+        void startCall();
+      };
+    }
+    void startCall();
+  };
+
   const declineCall = () => {
     setCallStatus(`تم الرفض — معاودة الاتصال كل ${redialInterval} ثانية لعدد ${redialRetries} محاولات`);
     navigator.vibrate?.([90, 40, 90]);
@@ -409,11 +428,15 @@ const Index = () => {
     notify("تم رفع النغمة", `تم اعتماد النغمة المخصصة: ${file.name} وحفظها ضمن تفضيلاتك السحابية.`);
   };
 
-  const startScheduledCall = () => {
+  const startScheduledCall = async () => {
     const seconds = Math.max(5, Number(callDelay) * 60);
+    const targetTime = Date.now() + seconds * 1000;
+    if ("Notification" in window && Notification.permission === "default") await Notification.requestPermission();
+    setCallTargetTime(targetTime);
     setTimerCountdown(seconds);
+    window.localStorage.setItem("madar_call_target", String(targetTime));
     setCallStatus(`المؤقت نشط — ستبدأ المكالمة بعد ${callDelay} دقيقة`);
-    notify("تم تفعيل المؤقت", "بدأ العد التنازلي الهادئ للمكالمة الوهمية وفق إعداداتك الحالية.");
+    notify("تم تفعيل المؤقت", "بدأ عد تنازلي موثوق يعتمد على وقت نهاية ثابت ويستمر عند عودة التبويب للنشاط.");
   };
 
   const shareApp = async (platformName: string) => {
