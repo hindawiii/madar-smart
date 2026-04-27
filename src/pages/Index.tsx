@@ -88,6 +88,7 @@ type MediaFormat = { kind: "فيديو" | "صوت"; quality: string; sizeMb: num
 type SharedFileRecord = { code: string; name: string; size: number; expiry: string; createdAt: number; url: string };
 type ConnectedDevice = { id: string; name: string; status: string };
 type VaultFile = { id: string; name: string; size: number; type: string; hidden: boolean; encryptedAt: number };
+type ShareMode = "cloud" | "nearby" | null;
 
 const CREDIT_COST: Record<PaidAction, number> = { call: 1, download: 1 };
 const SHARE_STORAGE_KEY = "madar_share_records";
@@ -183,6 +184,7 @@ const Index = () => {
   const [guideOpen, setGuideOpen] = useState(() => typeof window !== "undefined" && window.localStorage.getItem("madar_guide_seen") !== "true");
   const [guideStep, setGuideStep] = useState(0);
   const [timerCountdown, setTimerCountdown] = useState<number | null>(null);
+  const [callTargetTime, setCallTargetTime] = useState<number | null>(() => Number(window.localStorage.getItem("madar_call_target")) || null);
   const [expiry, setExpiry] = useState("أسبوع واحد");
   const [selectedFormat, setSelectedFormat] = useState<MediaFormat | null>(null);
   const [qualitiesOpen, setQualitiesOpen] = useState(false);
@@ -198,6 +200,7 @@ const Index = () => {
     { id: "nearby-1", name: "هاتف قريب", status: "جاهز للاقتران" },
     { id: "nearby-2", name: "حاسوب العمل", status: "تم العثور عليه" },
   ]);
+  const [shareMode, setShareMode] = useState<ShareMode>(null);
   const [vaultUnlocked, setVaultUnlocked] = useState(false);
   const [vaultPin, setVaultPin] = useState(() => window.localStorage.getItem("madar_vault_pin") || "");
   const [pinEntry, setPinEntry] = useState("");
@@ -261,15 +264,25 @@ const Index = () => {
   }, [detectedFormats]);
 
   useEffect(() => {
-    if (timerCountdown === null) return;
-    if (timerCountdown <= 0) {
-      setTimerCountdown(null);
-      void startCall();
-      return;
-    }
-    const timer = window.setTimeout(() => setTimerCountdown((current) => current === null ? null : current - 1), 1000);
-    return () => window.clearTimeout(timer);
-  }, [timerCountdown]);
+    if (!callTargetTime) return;
+    const tick = () => {
+      const remaining = Math.max(0, Math.ceil((callTargetTime - Date.now()) / 1000));
+      setTimerCountdown(remaining);
+      if (remaining <= 0) {
+        setCallTargetTime(null);
+        window.localStorage.removeItem("madar_call_target");
+        void triggerScheduledCall();
+      }
+    };
+    tick();
+    const timer = window.setInterval(tick, 1000);
+    const onVisible = () => document.visibilityState === "visible" && tick();
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [callTargetTime]);
 
   useEffect(() => {
     window.localStorage.setItem(VAULT_STORAGE_KEY, JSON.stringify(vaultFiles));
@@ -332,9 +345,9 @@ const Index = () => {
     return true;
   };
 
-  const startCall = async () => {
-    if (!spendCredit("call", "تم تجهيز المكالمة الوهمية ومزامنة الرنين والاهتزاز.")) return;
-    setCallStatus(`ستبدأ المكالمة بعد ${callDelay} دقيقة وفق ملف ${platform === "ios" ? "أيفون" : "أندرويد"}`);
+  const startCall = async (scheduled = false) => {
+    if (!scheduled && !spendCredit("call", "تم تجهيز المكالمة الوهمية ومزامنة الرنين والاهتزاز.")) return;
+    setCallStatus(scheduled ? "المكالمة الوهمية نشطة الآن — تم تشغيل واجهة الإنقاذ" : `ستبدأ المكالمة بعد ${callDelay} دقيقة وفق ملف ${platform === "ios" ? "أيفون" : "أندرويد"}`);
     navigator.vibrate?.([220, 90, 220, 90, 320]);
     try {
       const target = callFrameRef.current ?? document.documentElement;
@@ -342,6 +355,27 @@ const Index = () => {
     } catch {
       notify("تعذر تفعيل ملء الشاشة", "يمكن تشغيل الواجهة داخل المتصفح مع بقاء عناصر التحكم متاحة.");
     }
+  };
+
+  const triggerScheduledCall = async () => {
+    setActiveSection("call");
+    setCallStatus("انتهى المؤقت — المكالمة الوهمية جاهزة الآن بملء الشاشة");
+    navigator.vibrate?.([260, 90, 260, 90, 420]);
+    if ("Notification" in window && Notification.permission === "granted") {
+      const notification = new Notification("مكالمة وهمية جاهزة", {
+        body: "اضغط لفتح شاشة المكالمة في مدار فوراً.",
+        tag: "madar-fake-call",
+        requireInteraction: true,
+      });
+      notification.onclick = () => {
+        window.focus();
+        setActiveSection("call");
+        navigator.vibrate?.([220, 90, 220]);
+        const target = callFrameRef.current ?? document.documentElement;
+        void target.requestFullscreen?.();
+      };
+    }
+    void startCall(true);
   };
 
   const declineCall = () => {
@@ -397,11 +431,15 @@ const Index = () => {
     notify("تم رفع النغمة", `تم اعتماد النغمة المخصصة: ${file.name} وحفظها ضمن تفضيلاتك السحابية.`);
   };
 
-  const startScheduledCall = () => {
+  const startScheduledCall = async () => {
     const seconds = Math.max(5, Number(callDelay) * 60);
+    const targetTime = Date.now() + seconds * 1000;
+    if ("Notification" in window && Notification.permission === "default") await Notification.requestPermission();
+    setCallTargetTime(targetTime);
     setTimerCountdown(seconds);
+    window.localStorage.setItem("madar_call_target", String(targetTime));
     setCallStatus(`المؤقت نشط — ستبدأ المكالمة بعد ${callDelay} دقيقة`);
-    notify("تم تفعيل المؤقت", "بدأ العد التنازلي الهادئ للمكالمة الوهمية وفق إعداداتك الحالية.");
+    notify("تم تفعيل المؤقت", "بدأ عد تنازلي موثوق يعتمد على وقت نهاية ثابت ويستمر عند عودة التبويب للنشاط.");
   };
 
   const shareApp = async (platformName: string) => {
@@ -652,6 +690,8 @@ const Index = () => {
                 pairByCode={pairByCode}
                 connectedDevices={connectedDevices}
                 sendToDevice={sendToDevice}
+                shareMode={shareMode}
+                setShareMode={setShareMode}
               />
             </AppShell>
           )}
@@ -926,6 +966,12 @@ const FakeCallDashboard = ({
         <span className="flex items-center gap-2"><Timer className="h-5 w-5" /> تفعيل المؤقت</span>
         <span>{timerCountdown === null ? `${callDelay} دقائق` : `${timerCountdown} ثانية`}</span>
       </Button>
+      {timerCountdown !== null && (
+        <div className="rounded-3xl border border-primary/50 bg-primary/10 p-5 text-center shadow-gold animate-fade-in">
+          <p className="text-xs font-bold text-muted-foreground">الوقت المتبقي قبل المكالمة</p>
+          <p className="mt-2 text-5xl font-black text-primary" dir="ltr">{Math.floor(timerCountdown / 60).toString().padStart(2, "0")}:{(timerCountdown % 60).toString().padStart(2, "0")}</p>
+        </div>
+      )}
       <ControlPanel title="جدولة المكالمة" icon={CalendarClock}>
         <div className="grid grid-cols-3 gap-2">
           {["1", "5", "10"].map((value) => (
@@ -1144,6 +1190,8 @@ const SmartShare = ({
   pairByCode,
   connectedDevices,
   sendToDevice,
+  shareMode,
+  setShareMode,
 }: {
   notify: (title: string, description: string) => void;
   expiry: string;
@@ -1166,18 +1214,20 @@ const SmartShare = ({
   pairByCode: () => void;
   connectedDevices: ConnectedDevice[];
   sendToDevice: (deviceName: string) => void;
+  shareMode: ShareMode;
+  setShareMode: (mode: ShareMode) => void;
 }) => (
   <div className="space-y-5">
-    <SectionTitle icon={Signal} title="الشير العالمي" subtitle="تصميم مقسوم بين المشاركة السحابية بالكود والنقل المحلي السريع عبر Wi‑Fi دون إنترنت." />
-    <label className="flex min-h-36 cursor-pointer flex-col items-center justify-center rounded-3xl border border-dashed border-primary/60 bg-background/40 p-5 text-center transition-colors hover:bg-secondary/50">
-      <UploadCloud className="mb-3 h-9 w-9 text-primary" />
-      <span className="text-lg font-black">صندوق اختيار الملفات</span>
-      <span className="mt-2 text-sm text-muted-foreground">{sharedFile ? `${sharedFile.name} • ${formatFileSize(sharedFile.size)}` : "اختر ملفاً قبل الإرسال أو إنشاء كود سحابي"}</span>
-      <input type="file" className="sr-only" onChange={(event) => setSharedFile(event.target.files?.[0] ?? null)} />
-    </label>
-
-    <div className="grid gap-5 lg:grid-cols-2">
-      <div className="rounded-3xl border border-border/50 bg-gradient-glass p-5 shadow-glass">
+    <SectionTitle icon={Signal} title="الشير العالمي" subtitle="اختر وضع المشاركة، ثم توسّع البطاقة بسلاسة إلى مساحة عمل كاملة." />
+    {!shareMode && (
+      <div className="grid min-h-[30rem] gap-5 lg:grid-cols-2">
+        <ShareChoiceCard icon={Cloud} title="المشاركة السحابية" subtitle="كود تنزيل آمن، مدة انتهاء، وسجل ملفات محفوظ للمستخدم." onClick={() => setShareMode("cloud")} />
+        <ShareChoiceCard icon={Wifi} title="النقل القريب" subtitle="WebRTC وباركود واقتران يدوي للأجهزة القريبة دون إنترنت." onClick={() => setShareMode("nearby")} />
+      </div>
+    )}
+    {shareMode === "cloud" && (
+      <div className="min-h-[34rem] rounded-3xl border border-border/50 bg-gradient-glass p-5 shadow-glass animate-enter">
+        <Button variant="glass" className="mb-4" onClick={() => setShareMode(null)}><X className="h-4 w-4" /> العودة لاختيار الوضع</Button>
         <div className="mb-5 flex items-start justify-between gap-4">
           <div>
             <h3 className="text-2xl font-black">المشاركة السحابية</h3>
@@ -1201,8 +1251,10 @@ const SmartShare = ({
           <Button variant="glass" onClick={downloadByCode}><FileDown className="h-4 w-4" /> تنزيل</Button>
         </div>
       </div>
-
-      <div className="rounded-3xl border border-border/50 bg-gradient-glass p-5 shadow-glass">
+    )}
+    {shareMode === "nearby" && (
+      <div className="min-h-[34rem] rounded-3xl border border-border/50 bg-gradient-glass p-5 shadow-glass animate-enter">
+        <Button variant="glass" className="mb-4" onClick={() => setShareMode(null)}><X className="h-4 w-4" /> العودة لاختيار الوضع</Button>
         <div className="mb-5 flex items-start justify-between gap-4">
           <div>
             <h3 className="text-2xl font-black">النقل السريع</h3>
@@ -1243,7 +1295,7 @@ const SmartShare = ({
           </div>
         </div>
       </div>
-    </div>
+    )}
     {scannerOpen && (
       <div className="fixed inset-0 z-50 grid place-items-center bg-background/85 p-4 backdrop-blur-xl">
         <div className="w-full max-w-md rounded-3xl border border-border/70 bg-popover p-4 shadow-glass">
@@ -1418,6 +1470,17 @@ const LargeAction = ({ icon: Icon, label, onClick }: { icon: typeof Radio; label
   <button onClick={onClick} className="min-h-28 rounded-2xl border border-border/50 bg-background/40 p-4 text-right transition-all hover:-translate-y-1 hover:border-primary/60 hover:bg-primary/10">
     <Icon className="mb-3 h-7 w-7 text-primary" />
     <span className="font-black">{label}</span>
+  </button>
+);
+
+const ShareChoiceCard = ({ icon: Icon, title, subtitle, onClick }: { icon: typeof Cloud; title: string; subtitle: string; onClick: () => void }) => (
+  <button onClick={onClick} className="group relative overflow-hidden rounded-3xl border border-border/50 bg-gradient-glass p-6 text-right shadow-glass transition-all duration-300 hover:-translate-y-1 hover:border-primary/70 hover:shadow-gold animate-scale-in">
+    <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-gold text-primary-foreground shadow-gold transition-transform duration-300 group-hover:scale-110"><Icon className="h-8 w-8" /></div>
+    <div className="mt-24">
+      <h3 className="text-3xl font-black gold-text">{title}</h3>
+      <p className="mt-3 max-w-md text-sm font-semibold leading-7 text-muted-foreground">{subtitle}</p>
+      <span className="mt-6 inline-flex items-center gap-2 rounded-full border border-primary/50 bg-primary/10 px-4 py-2 text-sm font-black text-primary"><Maximize2 className="h-4 w-4" /> فتح مساحة العمل</span>
+    </div>
   </button>
 );
 
