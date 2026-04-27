@@ -200,6 +200,7 @@ const Index = () => {
     { id: "nearby-1", name: "هاتف قريب", status: "جاهز للاقتران" },
     { id: "nearby-2", name: "حاسوب العمل", status: "تم العثور عليه" },
   ]);
+  const [shareMode, setShareMode] = useState<ShareMode>(null);
   const [vaultUnlocked, setVaultUnlocked] = useState(false);
   const [vaultPin, setVaultPin] = useState(() => window.localStorage.getItem("madar_vault_pin") || "");
   const [pinEntry, setPinEntry] = useState("");
@@ -687,6 +688,8 @@ const Index = () => {
                 pairByCode={pairByCode}
                 connectedDevices={connectedDevices}
                 sendToDevice={sendToDevice}
+                shareMode={shareMode}
+                setShareMode={setShareMode}
               />
             </AppShell>
           )}
