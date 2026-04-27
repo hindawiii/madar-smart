@@ -88,6 +88,7 @@ type MediaFormat = { kind: "فيديو" | "صوت"; quality: string; sizeMb: num
 type SharedFileRecord = { code: string; name: string; size: number; expiry: string; createdAt: number; url: string };
 type ConnectedDevice = { id: string; name: string; status: string };
 type VaultFile = { id: string; name: string; size: number; type: string; hidden: boolean; encryptedAt: number };
+type ShareMode = "cloud" | "nearby" | null;
 
 const CREDIT_COST: Record<PaidAction, number> = { call: 1, download: 1 };
 const SHARE_STORAGE_KEY = "madar_share_records";
@@ -183,6 +184,7 @@ const Index = () => {
   const [guideOpen, setGuideOpen] = useState(() => typeof window !== "undefined" && window.localStorage.getItem("madar_guide_seen") !== "true");
   const [guideStep, setGuideStep] = useState(0);
   const [timerCountdown, setTimerCountdown] = useState<number | null>(null);
+  const [callTargetTime, setCallTargetTime] = useState<number | null>(() => Number(window.localStorage.getItem("madar_call_target")) || null);
   const [expiry, setExpiry] = useState("أسبوع واحد");
   const [selectedFormat, setSelectedFormat] = useState<MediaFormat | null>(null);
   const [qualitiesOpen, setQualitiesOpen] = useState(false);
