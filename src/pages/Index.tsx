@@ -345,9 +345,9 @@ const Index = () => {
     return true;
   };
 
-  const startCall = async () => {
-    if (!spendCredit("call", "تم تجهيز المكالمة الوهمية ومزامنة الرنين والاهتزاز.")) return;
-    setCallStatus(`ستبدأ المكالمة بعد ${callDelay} دقيقة وفق ملف ${platform === "ios" ? "أيفون" : "أندرويد"}`);
+  const startCall = async (scheduled = false) => {
+    if (!scheduled && !spendCredit("call", "تم تجهيز المكالمة الوهمية ومزامنة الرنين والاهتزاز.")) return;
+    setCallStatus(scheduled ? "المكالمة الوهمية نشطة الآن — تم تشغيل واجهة الإنقاذ" : `ستبدأ المكالمة بعد ${callDelay} دقيقة وفق ملف ${platform === "ios" ? "أيفون" : "أندرويد"}`);
     navigator.vibrate?.([220, 90, 220, 90, 320]);
     try {
       const target = callFrameRef.current ?? document.documentElement;
@@ -370,10 +370,12 @@ const Index = () => {
       notification.onclick = () => {
         window.focus();
         setActiveSection("call");
-        void startCall();
+        navigator.vibrate?.([220, 90, 220]);
+        const target = callFrameRef.current ?? document.documentElement;
+        void target.requestFullscreen?.();
       };
     }
-    void startCall();
+    void startCall(true);
   };
 
   const declineCall = () => {
