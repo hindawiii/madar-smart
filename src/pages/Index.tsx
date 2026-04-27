@@ -966,6 +966,12 @@ const FakeCallDashboard = ({
         <span className="flex items-center gap-2"><Timer className="h-5 w-5" /> تفعيل المؤقت</span>
         <span>{timerCountdown === null ? `${callDelay} دقائق` : `${timerCountdown} ثانية`}</span>
       </Button>
+      {timerCountdown !== null && (
+        <div className="rounded-3xl border border-primary/50 bg-primary/10 p-5 text-center shadow-gold animate-fade-in">
+          <p className="text-xs font-bold text-muted-foreground">الوقت المتبقي قبل المكالمة</p>
+          <p className="mt-2 text-5xl font-black text-primary" dir="ltr">{Math.floor(timerCountdown / 60).toString().padStart(2, "0")}:{(timerCountdown % 60).toString().padStart(2, "0")}</p>
+        </div>
+      )}
       <ControlPanel title="جدولة المكالمة" icon={CalendarClock}>
         <div className="grid grid-cols-3 gap-2">
           {["1", "5", "10"].map((value) => (
