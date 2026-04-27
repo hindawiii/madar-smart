@@ -1465,6 +1465,17 @@ const LargeAction = ({ icon: Icon, label, onClick }: { icon: typeof Radio; label
   </button>
 );
 
+const ShareChoiceCard = ({ icon: Icon, title, subtitle, onClick }: { icon: typeof Cloud; title: string; subtitle: string; onClick: () => void }) => (
+  <button onClick={onClick} className="group relative overflow-hidden rounded-3xl border border-border/50 bg-gradient-glass p-6 text-right shadow-glass transition-all duration-300 hover:-translate-y-1 hover:border-primary/70 hover:shadow-gold animate-scale-in">
+    <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-gold text-primary-foreground shadow-gold transition-transform duration-300 group-hover:scale-110"><Icon className="h-8 w-8" /></div>
+    <div className="mt-24">
+      <h3 className="text-3xl font-black gold-text">{title}</h3>
+      <p className="mt-3 max-w-md text-sm font-semibold leading-7 text-muted-foreground">{subtitle}</p>
+      <span className="mt-6 inline-flex items-center gap-2 rounded-full border border-primary/50 bg-primary/10 px-4 py-2 text-sm font-black text-primary"><Maximize2 className="h-4 w-4" /> فتح مساحة العمل</span>
+    </div>
+  </button>
+);
+
 const StatusPill = ({ icon: Icon, label, value }: { icon: typeof Smartphone; label: string; value: string }) => (
   <div className="rounded-xl bg-background/50 p-3">
     <Icon className="mb-2 h-4 w-4 text-primary" />
