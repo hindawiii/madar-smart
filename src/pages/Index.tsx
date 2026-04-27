@@ -733,6 +733,38 @@ const FloatingNavigation = ({ activeSection, setActiveSection, activeIndex }: { 
   </nav>
 );
 
+const guideCards = [
+  { icon: Radar, title: "مرحباً بك في مدار", body: "واجهة عربية فصحى تجمع المكالمة الوهمية، التحميل الذكي، والشير المحلي والسحابي ضمن تجربة داكنة ذهبية عالية الدقة." },
+  { icon: PhoneCall, title: "تفعيل المكالمة من الخارج", body: "اضغط مطولاً على أيقونة التطبيق في شاشتك الرئيسية واختر (مكالمة فورية) للإنقاذ السريع دون فتح التطبيق." },
+  { icon: HardDriveDownload, title: "المستشعر الذكي", body: "ألصق الرابط أو افتح منصة داخلية ليعرض مدار الجودات المتاحة فقط دون نوافذ مزعجة أو صيغ وهمية." },
+  { icon: Wifi, title: "الشير العالمي", body: "اختر ملفاً، أنشئ كوداً سحابياً أو اربط جهازاً قريباً عبر WebRTC لإرسال الملفات محلياً دون إنترنت." },
+];
+
+const UserGuide = ({ step, setStep, closeGuide }: { step: number; setStep: (step: number) => void; closeGuide: () => void }) => {
+  const card = guideCards[step];
+  const Icon = card.icon;
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-background/88 p-4 backdrop-blur-2xl">
+      <section className="w-full max-w-lg rounded-3xl border border-primary/50 bg-gradient-glass p-5 shadow-gold animate-scale-in">
+        <div className="mb-5 flex items-center justify-between">
+          <Button variant="glass" size="icon" onClick={closeGuide} aria-label="إغلاق دليل الاستخدام"><X className="h-4 w-4" /></Button>
+          <div className="flex gap-1">{guideCards.map((item, index) => <span key={item.title} className={`h-2 w-8 rounded-full ${index === step ? "bg-primary" : "bg-secondary"}`} />)}</div>
+        </div>
+        <div className="relative overflow-hidden rounded-3xl border border-border/50 bg-background/45 p-6 text-center">
+          <div className="mx-auto mb-5 flex h-20 w-20 items-center justify-center rounded-2xl bg-gradient-gold text-primary-foreground shadow-gold animate-float-slow"><Icon className="h-10 w-10" /></div>
+          <h2 className="text-3xl font-black gold-text">{card.title}</h2>
+          <p className="mt-4 text-sm font-semibold leading-8 text-muted-foreground">{card.body}</p>
+          {step === 1 && <div className="mx-auto mt-5 max-w-xs rounded-2xl border border-primary/40 bg-primary/10 p-4 text-right"><Smartphone className="mb-2 h-6 w-6 text-primary" /><p className="text-sm font-bold">اختصار الشاشة الرئيسية</p><p className="mt-1 text-xs leading-6 text-muted-foreground">مكالمة فورية • التحميل الذكي • الشير</p></div>}
+        </div>
+        <div className="mt-5 flex gap-3">
+          <Button variant="glass" className="flex-1" onClick={() => step > 0 ? setStep(step - 1) : closeGuide()}>{step > 0 ? "السابق" : "تخطي"}</Button>
+          <Button variant="gold" className="flex-1" onClick={() => step < guideCards.length - 1 ? setStep(step + 1) : closeGuide()}>{step < guideCards.length - 1 ? "التالي" : "بدء الاستخدام"}</Button>
+        </div>
+      </section>
+    </div>
+  );
+};
+
 const FakeCallDashboard = ({
   platform,
   setPlatform,
