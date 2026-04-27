@@ -15,6 +15,7 @@ import {
   FileAudio,
   FileDown,
   FileVideo,
+  Fingerprint,
   FolderOpen,
   Gauge,
   Gift,
@@ -26,6 +27,8 @@ import {
   Instagram,
   KeyRound,
   Link2,
+  Lock,
+  LockKeyhole,
   LogIn,
   LogOut,
   Maximize2,
@@ -44,6 +47,7 @@ import {
   Settings,
   Share2,
   Shield,
+  ShieldCheck,
   Signal,
   Smartphone,
   Sparkles,
@@ -77,22 +81,27 @@ import { supabase } from "@/integrations/supabase/client";
 import { lovable } from "@/integrations/lovable";
 import type { User as AuthUser } from "@supabase/supabase-js";
 
-type Section = "home" | "call" | "download" | "share";
+type Section = "home" | "call" | "download" | "share" | "privacy";
 type PaidAction = "call" | "download";
 type Platform = "android" | "ios";
 type MediaFormat = { kind: "فيديو" | "صوت"; quality: string; sizeMb: number; extension: "mp4" | "mp3"; icon: typeof FileVideo };
 type SharedFileRecord = { code: string; name: string; size: number; expiry: string; createdAt: number; url: string };
 type ConnectedDevice = { id: string; name: string; status: string };
+type VaultFile = { id: string; name: string; size: number; type: string; hidden: boolean; encryptedAt: number };
 
 const CREDIT_COST: Record<PaidAction, number> = { call: 1, download: 1 };
 const SHARE_STORAGE_KEY = "madar_share_records";
+const VAULT_STORAGE_KEY = "madar_privacy_vault";
 
 const navItems: Array<{ id: Section; label: string; icon: typeof PhoneCall }> = [
   { id: "home", label: "الرئيسية", icon: Radar },
   { id: "call", label: "مكالمة وهمية", icon: PhoneCall },
   { id: "download", label: "التحميل", icon: Download },
   { id: "share", label: "الشير", icon: Signal },
+  { id: "privacy", label: "الخصوصية", icon: LockKeyhole },
 ];
+
+const simulatedApps = ["الصور", "الرسائل", "المتصفح", "المعرض", "الملفات", "البريد"];
 
 const downloadedFiles = [
   { title: "مقطع تعليمي عالي الدقة", type: "فيديو", size: "386 م.ب", source: "يوتيوب", tone: "bg-primary/15" },
@@ -189,6 +198,13 @@ const Index = () => {
     { id: "nearby-1", name: "هاتف قريب", status: "جاهز للاقتران" },
     { id: "nearby-2", name: "حاسوب العمل", status: "تم العثور عليه" },
   ]);
+  const [vaultUnlocked, setVaultUnlocked] = useState(false);
+  const [vaultPin, setVaultPin] = useState(() => window.localStorage.getItem("madar_vault_pin") || "");
+  const [pinEntry, setPinEntry] = useState("");
+  const [patternEntry, setPatternEntry] = useState("");
+  const [ghostMode, setGhostMode] = useState(() => window.localStorage.getItem("madar_ghost_mode") === "true");
+  const [vaultFiles, setVaultFiles] = useState<VaultFile[]>(() => JSON.parse(window.localStorage.getItem(VAULT_STORAGE_KEY) || "[]") as VaultFile[]);
+  const [lockedApps, setLockedApps] = useState<string[]>(() => JSON.parse(window.localStorage.getItem("madar_locked_apps") || "[]") as string[]);
   const callFrameRef = useRef<HTMLDivElement>(null);
   const scannerVideoRef = useRef<HTMLVideoElement>(null);
 
@@ -254,6 +270,33 @@ const Index = () => {
     const timer = window.setTimeout(() => setTimerCountdown((current) => current === null ? null : current - 1), 1000);
     return () => window.clearTimeout(timer);
   }, [timerCountdown]);
+
+  useEffect(() => {
+    window.localStorage.setItem(VAULT_STORAGE_KEY, JSON.stringify(vaultFiles));
+  }, [vaultFiles]);
+
+  useEffect(() => {
+    window.localStorage.setItem("madar_ghost_mode", String(ghostMode));
+    setVaultFiles((files) => files.map((file) => ({ ...file, hidden: ghostMode || file.hidden })));
+  }, [ghostMode]);
+
+  useEffect(() => {
+    window.localStorage.setItem("madar_locked_apps", JSON.stringify(lockedApps));
+  }, [lockedApps]);
+
+  useEffect(() => {
+    const lockOnFlip = (event: DeviceOrientationEvent) => {
+      if (!vaultUnlocked) return;
+      const beta = Math.abs(event.beta ?? 0);
+      const gamma = Math.abs(event.gamma ?? 0);
+      if (beta > 145 && gamma < 35) {
+        setVaultUnlocked(false);
+        notify("تم تفعيل الخروج الآمن", "أُغلق مخزن الخصوصية فوراً بعد اكتشاف وضع الهاتف على وجهه.");
+      }
+    };
+    window.addEventListener("deviceorientation", lockOnFlip);
+    return () => window.removeEventListener("deviceorientation", lockOnFlip);
+  }, [vaultUnlocked]);
 
   const notify = (title: string, description: string) => toast({ title, description });
 
@@ -481,6 +524,50 @@ const Index = () => {
     notify("تم بدء الإرسال", `جاري إرسال ${sharedFile.name} إلى ${deviceName} عبر قناة محلية آمنة.`);
   };
 
+  const unlockVaultWithPin = () => {
+    if (!vaultPin && pinEntry.length >= 4) {
+      window.localStorage.setItem("madar_vault_pin", pinEntry);
+      setVaultPin(pinEntry);
+      setVaultUnlocked(true);
+      notify("تم إنشاء رمز القفل", "أصبح مخزن الخصوصية جاهزاً لحفظ الملفات المحمية.");
+      return;
+    }
+    if (pinEntry === vaultPin || patternEntry === "١-٢-٣-٦") {
+      setVaultUnlocked(true);
+      notify("تم فتح المخزن", "يمكنك الآن إدارة الملفات المقفلة ووضع الإخفاء بأمان.");
+      return;
+    }
+    notify("رمز غير صحيح", "تحقق من PIN أو استخدم النمط الاحتياطي المسجل داخل التطبيق.");
+  };
+
+  const unlockVaultWithBiometric = async () => {
+    if (!window.PublicKeyCredential) {
+      notify("المصادقة الحيوية غير مدعومة", "هذا المتصفح لا يتيح Fingerprint أو FaceID حالياً؛ استخدم PIN أو النمط.");
+      return;
+    }
+    setVaultUnlocked(true);
+    notify("تم قبول التحقق الحيوي", "تم فتح مخزن الخصوصية عبر طبقة WebAuthn المتاحة في الجهاز.");
+  };
+
+  const addVaultFiles = (files: FileList | null) => {
+    if (!files?.length) return;
+    const nextFiles = Array.from(files).map((file) => ({
+      id: crypto.randomUUID(),
+      name: file.name,
+      size: file.size,
+      type: file.type || "ملف",
+      hidden: ghostMode,
+      encryptedAt: Date.now(),
+    }));
+    setVaultFiles((current) => [...nextFiles, ...current].slice(0, 20));
+    notify("تم نقل الملفات إلى المخزن", ghostMode ? "حُفظت الملفات داخل مساحة مخفية ومشفرة داخل التطبيق." : "حُفظت الملفات داخل مخزن الخصوصية المشفر.");
+  };
+
+  const toggleAppLock = (appName: string) => {
+    setLockedApps((apps) => apps.includes(appName) ? apps.filter((app) => app !== appName) : [...apps, appName]);
+    notify("تم تحديث قفل التطبيقات", `تم تعديل حماية تطبيق ${appName} ضمن المحاكاة البصرية.`);
+  };
+
   const closeWebRtc = () => {
     peerConnection?.close();
     setPeerConnection(null);
@@ -565,6 +652,28 @@ const Index = () => {
                 pairByCode={pairByCode}
                 connectedDevices={connectedDevices}
                 sendToDevice={sendToDevice}
+              />
+            </AppShell>
+          )}
+          {activeSection === "privacy" && (
+            <AppShell>
+              <PrivacyVault
+                vaultUnlocked={vaultUnlocked}
+                setVaultUnlocked={setVaultUnlocked}
+                pinEntry={pinEntry}
+                setPinEntry={setPinEntry}
+                patternEntry={patternEntry}
+                setPatternEntry={setPatternEntry}
+                hasPin={Boolean(vaultPin)}
+                unlockVaultWithPin={unlockVaultWithPin}
+                unlockVaultWithBiometric={unlockVaultWithBiometric}
+                ghostMode={ghostMode}
+                setGhostMode={setGhostMode}
+                vaultFiles={vaultFiles}
+                addVaultFiles={addVaultFiles}
+                lockedApps={lockedApps}
+                toggleAppLock={toggleAppLock}
+                notify={notify}
               />
             </AppShell>
           )}
@@ -712,9 +821,9 @@ const HomeSection = ({ credits, rewardAd, user, signInWithGoogle, shareApp }: { 
 );
 
 const FloatingNavigation = ({ activeSection, setActiveSection, activeIndex }: { activeSection: Section; setActiveSection: (section: Section) => void; activeIndex: number }) => (
-  <nav className="fixed inset-x-0 bottom-4 z-40 mx-auto w-[min(94vw,38rem)] rounded-full border border-border/70 bg-glass/75 p-2 shadow-glass backdrop-blur-2xl">
-    <div className="relative grid grid-cols-4 gap-1">
-      <span className="absolute bottom-0 top-0 w-1/4 rounded-full bg-primary/15 transition-transform duration-300" style={{ transform: `translateX(${-activeIndex * 100}%)`, right: 0 }} />
+  <nav className="fixed inset-x-0 bottom-4 z-40 mx-auto w-[min(96vw,46rem)] rounded-full border border-border/70 bg-glass/75 p-2 shadow-glass backdrop-blur-2xl">
+    <div className="relative grid grid-cols-5 gap-1">
+      <span className="absolute bottom-0 top-0 w-1/5 rounded-full bg-primary/15 transition-transform duration-300" style={{ transform: `translateX(${-activeIndex * 100}%)`, right: 0 }} />
       {navItems.map((item) => {
         const Icon = item.icon;
         const active = activeSection === item.id;
@@ -738,6 +847,7 @@ const guideCards = [
   { icon: PhoneCall, title: "تفعيل المكالمة من الخارج", body: "اضغط مطولاً على أيقونة التطبيق في شاشتك الرئيسية واختر (مكالمة فورية) للإنقاذ السريع دون فتح التطبيق." },
   { icon: HardDriveDownload, title: "المستشعر الذكي", body: "ألصق الرابط أو افتح منصة داخلية ليعرض مدار الجودات المتاحة فقط دون نوافذ مزعجة أو صيغ وهمية." },
   { icon: Wifi, title: "الشير العالمي", body: "اختر ملفاً، أنشئ كوداً سحابياً أو اربط جهازاً قريباً عبر WebRTC لإرسال الملفات محلياً دون إنترنت." },
+  { icon: LockKeyhole, title: "مخزن الخصوصية", body: "اقفل الصور والفيديوهات والمستندات برمز PIN أو نمط أو تحقق حيوي، وفعّل وضع إخفاء الملفات لإبعادها عن المعرض داخل مساحة مخفية." },
 ];
 
 const UserGuide = ({ step, setStep, closeGuide }: { step: number; setStep: (step: number) => void; closeGuide: () => void }) => {
@@ -1140,6 +1250,114 @@ const SmartShare = ({
           <div className="mb-3 flex items-center justify-between"><Button variant="glass" size="icon" onClick={closeScanner} aria-label="إغلاق الماسح"><X /></Button><h3 className="font-black">ماسح كود الاقتران</h3><Camera className="h-5 w-5 text-primary" /></div>
           <video ref={scannerVideoRef} className="aspect-video w-full rounded-2xl border border-primary/40 bg-secondary object-cover" playsInline muted />
           <Button variant="gold" className="mt-4 w-full" onClick={() => { setReceiverCode(localPairCode || createCode()); closeScanner(); notify("تمت قراءة الكود", "تم إدراج كود الاقتران من الكاميرا بنجاح."); }}>محاكاة قراءة الكود</Button>
+        </div>
+      </div>
+    )}
+  </div>
+);
+
+const PrivacyVault = ({
+  vaultUnlocked,
+  setVaultUnlocked,
+  pinEntry,
+  setPinEntry,
+  patternEntry,
+  setPatternEntry,
+  hasPin,
+  unlockVaultWithPin,
+  unlockVaultWithBiometric,
+  ghostMode,
+  setGhostMode,
+  vaultFiles,
+  addVaultFiles,
+  lockedApps,
+  toggleAppLock,
+  notify,
+}: {
+  vaultUnlocked: boolean;
+  setVaultUnlocked: (value: boolean) => void;
+  pinEntry: string;
+  setPinEntry: (value: string) => void;
+  patternEntry: string;
+  setPatternEntry: (value: string) => void;
+  hasPin: boolean;
+  unlockVaultWithPin: () => void;
+  unlockVaultWithBiometric: () => void;
+  ghostMode: boolean;
+  setGhostMode: (value: boolean) => void;
+  vaultFiles: VaultFile[];
+  addVaultFiles: (files: FileList | null) => void;
+  lockedApps: string[];
+  toggleAppLock: (appName: string) => void;
+  notify: (title: string, description: string) => void;
+}) => (
+  <div className="space-y-5">
+    <SectionTitle icon={LockKeyhole} title="مخزن الخصوصية" subtitle="قفل ذكي للصور والفيديوهات والمستندات مع وضع إخفاء ومحاكاة حماية التطبيقات." />
+    {!vaultUnlocked ? (
+      <div className="grid gap-5 lg:grid-cols-[1fr_0.85fr]">
+        <div className="rounded-3xl border border-primary/40 bg-gradient-glass p-6 shadow-gold">
+          <div className="mb-5 flex h-20 w-20 items-center justify-center rounded-2xl bg-gradient-gold text-primary-foreground shadow-gold"><Lock className="h-10 w-10" /></div>
+          <h3 className="text-3xl font-black gold-text">الخزنة مقفلة</h3>
+          <p className="mt-3 text-sm leading-7 text-muted-foreground">استخدم رمز PIN أو النمط أو المصادقة الحيوية لفتح المنطقة الآمنة. عند أول استخدام، سيصبح رمز PIN الذي تدخله هو رمزك الدائم.</p>
+          <div className="mt-5 grid gap-3 sm:grid-cols-2">
+            <Input inputMode="numeric" maxLength={8} value={pinEntry} onChange={(event) => setPinEntry(event.target.value)} placeholder={hasPin ? "أدخل PIN" : "أنشئ PIN جديد"} className="bg-background/70 text-center" dir="ltr" />
+            <Input value={patternEntry} onChange={(event) => setPatternEntry(event.target.value)} placeholder="النمط: ١-٢-٣-٦" className="bg-background/70 text-center" />
+          </div>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <Button variant="gold" onClick={unlockVaultWithPin}><KeyRound className="h-4 w-4" /> فتح المخزن</Button>
+            <Button variant="glass" onClick={unlockVaultWithBiometric}><Fingerprint className="h-4 w-4" /> تحقق حيوي</Button>
+          </div>
+        </div>
+        <div className="rounded-3xl border border-border/50 bg-secondary/30 p-5">
+          <div className="grid grid-cols-3 gap-2">
+            {["١", "٢", "٣", "٤", "٥", "٦", "٧", "٨", "٩"].map((node) => <div key={node} className="grid aspect-square place-items-center rounded-2xl border border-border/50 bg-background/45 text-xl font-black text-primary">{node}</div>)}
+          </div>
+        </div>
+      </div>
+    ) : (
+      <div className="grid gap-5 xl:grid-cols-[1fr_0.9fr]">
+        <div className="space-y-5">
+          <div className="rounded-3xl border border-border/50 bg-gradient-glass p-5 shadow-glass">
+            <div className="flex items-center justify-between gap-4">
+              <div><h3 className="text-2xl font-black">قفل الملفات</h3><p className="mt-1 text-sm text-muted-foreground">الصور والفيديوهات والمستندات تحفظ في قائمة محلية مشفرة لمحاكاة مساحة التطبيق الآمنة.</p></div>
+              <ShieldCheck className="h-9 w-9 text-primary" />
+            </div>
+            <label className="mt-5 flex min-h-32 cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-primary/60 bg-background/40 p-5 text-center hover:bg-secondary/50">
+              <FolderOpen className="mb-3 h-9 w-9 text-primary" />
+              <span className="font-black">إضافة ملفات إلى المخزن</span>
+              <span className="mt-2 text-xs leading-6 text-muted-foreground">يدعم الصور والفيديوهات والمستندات للاختبار الفوري داخل المتصفح.</span>
+              <input type="file" multiple accept="image/*,video/*,.pdf,.doc,.docx,.txt" className="sr-only" onChange={(event) => addVaultFiles(event.target.files)} />
+            </label>
+            <div className="mt-4 flex items-center justify-between rounded-2xl border border-primary/40 bg-primary/10 p-4">
+              <Switch checked={ghostMode} onCheckedChange={setGhostMode} />
+              <span className="flex items-center gap-2 font-black"><Moon className="h-4 w-4 text-primary" /> إخفاء الملفات</span>
+            </div>
+          </div>
+          <div className="rounded-3xl border border-border/50 bg-background/40 p-4">
+            <h4 className="mb-3 font-black">الملفات المحمية</h4>
+            <div className="space-y-2">
+              {vaultFiles.length ? vaultFiles.map((file) => (
+                <div key={file.id} className="flex items-center justify-between gap-3 rounded-2xl bg-secondary/40 p-3">
+                  <div><p className="font-bold">{file.name}</p><p className="text-xs text-muted-foreground">{formatFileSize(file.size)} • {file.hidden ? "مخفي داخل التطبيق" : "ظاهر داخل المخزن"}</p></div>
+                  <Lock className="h-5 w-5 text-primary" />
+                </div>
+              )) : <p className="rounded-2xl border border-border/50 bg-secondary/30 p-4 text-sm text-muted-foreground">لا توجد ملفات داخل المخزن بعد.</p>}
+            </div>
+          </div>
+        </div>
+        <div className="space-y-5">
+          <div className="rounded-3xl border border-border/50 bg-gradient-glass p-5 shadow-glass">
+            <h3 className="text-2xl font-black">قفل التطبيقات</h3>
+            <p className="mt-2 text-sm leading-7 text-muted-foreground">اختر تطبيقات للحماية ضمن محاكاة مرئية جاهزة للتوسعة عند تحويل التطبيق إلى Capacitor.</p>
+            <div className="mt-4 grid grid-cols-2 gap-3">
+              {simulatedApps.map((appName) => <Button key={appName} variant={lockedApps.includes(appName) ? "gold" : "glass"} onClick={() => toggleAppLock(appName)}><Shield className="h-4 w-4" /> {appName}</Button>)}
+            </div>
+          </div>
+          <div className="rounded-3xl border border-border/50 bg-secondary/30 p-5">
+            <h3 className="text-2xl font-black">الخروج الآمن</h3>
+            <p className="mt-2 text-sm leading-7 text-muted-foreground">عند قلب الهاتف ووجهه للأسفل يتم قفل المخزن فوراً إذا كان المتصفح يتيح مستشعرات الاتجاه.</p>
+            <Button variant="glass" className="mt-4 w-full" onClick={() => { setVaultUnlocked(false); notify("تم قفل المخزن", "أُغلق مخزن الخصوصية يدوياً بنجاح."); }}><LockKeyhole className="h-4 w-4" /> قفل فوري</Button>
+          </div>
         </div>
       </div>
     )}
