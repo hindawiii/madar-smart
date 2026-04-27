@@ -116,12 +116,17 @@ export default {
           "0%, 100%": { opacity: "0.55", transform: "scale(1)" },
           "50%": { opacity: "0.95", transform: "scale(1.04)" },
         },
+        "scale-in": {
+          "0%": { opacity: "0", transform: "scale(0.96) translateY(10px)" },
+          "100%": { opacity: "1", transform: "scale(1) translateY(0)" },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
         "float-slow": "float-slow 6s ease-in-out infinite",
         "pulse-gold": "pulse-gold 2.8s ease-in-out infinite",
+        "scale-in": "scale-in 0.24s ease-out",
       },
     },
   },
