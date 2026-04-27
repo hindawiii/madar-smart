@@ -1182,6 +1182,8 @@ const SmartShare = ({
   pairByCode,
   connectedDevices,
   sendToDevice,
+  shareMode,
+  setShareMode,
 }: {
   notify: (title: string, description: string) => void;
   expiry: string;
@@ -1204,6 +1206,8 @@ const SmartShare = ({
   pairByCode: () => void;
   connectedDevices: ConnectedDevice[];
   sendToDevice: (deviceName: string) => void;
+  shareMode: ShareMode;
+  setShareMode: (mode: ShareMode) => void;
 }) => (
   <div className="space-y-5">
     <SectionTitle icon={Signal} title="الشير العالمي" subtitle="تصميم مقسوم بين المشاركة السحابية بالكود والنقل المحلي السريع عبر Wi‑Fi دون إنترنت." />
