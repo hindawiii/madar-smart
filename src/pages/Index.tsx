@@ -821,9 +821,9 @@ const HomeSection = ({ credits, rewardAd, user, signInWithGoogle, shareApp }: { 
 );
 
 const FloatingNavigation = ({ activeSection, setActiveSection, activeIndex }: { activeSection: Section; setActiveSection: (section: Section) => void; activeIndex: number }) => (
-  <nav className="fixed inset-x-0 bottom-4 z-40 mx-auto w-[min(94vw,38rem)] rounded-full border border-border/70 bg-glass/75 p-2 shadow-glass backdrop-blur-2xl">
-    <div className="relative grid grid-cols-4 gap-1">
-      <span className="absolute bottom-0 top-0 w-1/4 rounded-full bg-primary/15 transition-transform duration-300" style={{ transform: `translateX(${-activeIndex * 100}%)`, right: 0 }} />
+  <nav className="fixed inset-x-0 bottom-4 z-40 mx-auto w-[min(96vw,46rem)] rounded-full border border-border/70 bg-glass/75 p-2 shadow-glass backdrop-blur-2xl">
+    <div className="relative grid grid-cols-5 gap-1">
+      <span className="absolute bottom-0 top-0 w-1/5 rounded-full bg-primary/15 transition-transform duration-300" style={{ transform: `translateX(${-activeIndex * 100}%)`, right: 0 }} />
       {navItems.map((item) => {
         const Icon = item.icon;
         const active = activeSection === item.id;
@@ -847,6 +847,7 @@ const guideCards = [
   { icon: PhoneCall, title: "تفعيل المكالمة من الخارج", body: "اضغط مطولاً على أيقونة التطبيق في شاشتك الرئيسية واختر (مكالمة فورية) للإنقاذ السريع دون فتح التطبيق." },
   { icon: HardDriveDownload, title: "المستشعر الذكي", body: "ألصق الرابط أو افتح منصة داخلية ليعرض مدار الجودات المتاحة فقط دون نوافذ مزعجة أو صيغ وهمية." },
   { icon: Wifi, title: "الشير العالمي", body: "اختر ملفاً، أنشئ كوداً سحابياً أو اربط جهازاً قريباً عبر WebRTC لإرسال الملفات محلياً دون إنترنت." },
+  { icon: LockKeyhole, title: "مخزن الخصوصية", body: "اقفل الصور والفيديوهات والمستندات برمز PIN أو نمط أو تحقق حيوي، وفعّل وضع إخفاء الملفات لإبعادها عن المعرض داخل مساحة مخفية." },
 ];
 
 const UserGuide = ({ step, setStep, closeGuide }: { step: number; setStep: (step: number) => void; closeGuide: () => void }) => {
