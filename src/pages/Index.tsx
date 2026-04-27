@@ -1210,16 +1210,16 @@ const SmartShare = ({
   setShareMode: (mode: ShareMode) => void;
 }) => (
   <div className="space-y-5">
-    <SectionTitle icon={Signal} title="الشير العالمي" subtitle="تصميم مقسوم بين المشاركة السحابية بالكود والنقل المحلي السريع عبر Wi‑Fi دون إنترنت." />
-    <label className="flex min-h-36 cursor-pointer flex-col items-center justify-center rounded-3xl border border-dashed border-primary/60 bg-background/40 p-5 text-center transition-colors hover:bg-secondary/50">
-      <UploadCloud className="mb-3 h-9 w-9 text-primary" />
-      <span className="text-lg font-black">صندوق اختيار الملفات</span>
-      <span className="mt-2 text-sm text-muted-foreground">{sharedFile ? `${sharedFile.name} • ${formatFileSize(sharedFile.size)}` : "اختر ملفاً قبل الإرسال أو إنشاء كود سحابي"}</span>
-      <input type="file" className="sr-only" onChange={(event) => setSharedFile(event.target.files?.[0] ?? null)} />
-    </label>
-
-    <div className="grid gap-5 lg:grid-cols-2">
-      <div className="rounded-3xl border border-border/50 bg-gradient-glass p-5 shadow-glass">
+    <SectionTitle icon={Signal} title="الشير العالمي" subtitle="اختر وضع المشاركة، ثم توسّع البطاقة بسلاسة إلى مساحة عمل كاملة." />
+    {!shareMode && (
+      <div className="grid min-h-[30rem] gap-5 lg:grid-cols-2">
+        <ShareChoiceCard icon={Cloud} title="المشاركة السحابية" subtitle="كود تنزيل آمن، مدة انتهاء، وسجل ملفات محفوظ للمستخدم." onClick={() => setShareMode("cloud")} />
+        <ShareChoiceCard icon={Wifi} title="النقل القريب" subtitle="WebRTC وباركود واقتران يدوي للأجهزة القريبة دون إنترنت." onClick={() => setShareMode("nearby")} />
+      </div>
+    )}
+    {shareMode === "cloud" && (
+      <div className="min-h-[34rem] rounded-3xl border border-border/50 bg-gradient-glass p-5 shadow-glass animate-enter">
+        <Button variant="glass" className="mb-4" onClick={() => setShareMode(null)}><X className="h-4 w-4" /> العودة لاختيار الوضع</Button>
         <div className="mb-5 flex items-start justify-between gap-4">
           <div>
             <h3 className="text-2xl font-black">المشاركة السحابية</h3>
@@ -1243,8 +1243,10 @@ const SmartShare = ({
           <Button variant="glass" onClick={downloadByCode}><FileDown className="h-4 w-4" /> تنزيل</Button>
         </div>
       </div>
-
-      <div className="rounded-3xl border border-border/50 bg-gradient-glass p-5 shadow-glass">
+    )}
+    {shareMode === "nearby" && (
+      <div className="min-h-[34rem] rounded-3xl border border-border/50 bg-gradient-glass p-5 shadow-glass animate-enter">
+        <Button variant="glass" className="mb-4" onClick={() => setShareMode(null)}><X className="h-4 w-4" /> العودة لاختيار الوضع</Button>
         <div className="mb-5 flex items-start justify-between gap-4">
           <div>
             <h3 className="text-2xl font-black">النقل السريع</h3>
@@ -1285,7 +1287,7 @@ const SmartShare = ({
           </div>
         </div>
       </div>
-    </div>
+    )}
     {scannerOpen && (
       <div className="fixed inset-0 z-50 grid place-items-center bg-background/85 p-4 backdrop-blur-xl">
         <div className="w-full max-w-md rounded-3xl border border-border/70 bg-popover p-4 shadow-glass">
