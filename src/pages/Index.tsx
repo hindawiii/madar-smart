@@ -587,6 +587,7 @@ const Header = ({
   notify,
   signInWithGoogle,
   signOut,
+  openGuide,
 }: {
   credits: string;
   user: AuthUser | null;
@@ -597,6 +598,7 @@ const Header = ({
   notify: (title: string, description: string) => void;
   signInWithGoogle: () => void;
   signOut: () => void;
+  openGuide: () => void;
 }) => (
   <header className="glass-panel sticky top-4 z-30 flex items-center justify-between rounded-2xl px-4 py-3">
     <div className="flex items-center gap-3">
@@ -614,6 +616,9 @@ const Header = ({
         <Sparkles className="h-4 w-4 text-primary" />
         {credits}
       </div>
+      <Button variant="glass" size="icon" aria-label="فتح دليل الاستخدام" onClick={openGuide}>
+        <HelpCircle className="h-5 w-5" />
+      </Button>
       <Drawer direction="right">
         <DrawerTrigger asChild>
           <Button variant="glass" size="icon" aria-label="فتح الإعدادات">
@@ -668,14 +673,21 @@ const Header = ({
 
 const AppShell = ({ children }: { children: React.ReactNode }) => <section className="glass-panel min-h-[620px] rounded-3xl p-3 sm:p-5">{children}</section>;
 
-const HomeSection = ({ credits, rewardAd }: { credits: string; rewardAd: () => void }) => (
+const HomeSection = ({ credits, rewardAd, user, signInWithGoogle, shareApp }: { credits: string; rewardAd: () => void; user: AuthUser | null; signInWithGoogle: () => void; shareApp: (platformName: string) => void }) => (
   <section className="flex min-h-[620px] flex-col justify-between rounded-3xl border border-border/50 bg-gradient-glass p-5 shadow-glass sm:p-8">
-    <div className="mx-auto w-full max-w-xl rounded-3xl border border-border/50 bg-secondary/30 p-6 text-center shadow-gold">
-      <Gift className="mx-auto mb-4 h-12 w-12 text-primary" />
-      <p className="mb-4 text-sm font-bold text-muted-foreground">الرصيد الحالي: {credits}</p>
-      <Button variant="gold" size="lg" className="w-full" onClick={rewardAd}>
-        <Gift className="h-5 w-5" /> شاهد إعلاناً للحصول على 5 أرصدة إضافية
-      </Button>
+    <div className="mx-auto w-full max-w-2xl space-y-4">
+      <div className="rounded-3xl border border-primary/40 bg-primary/10 p-5 text-center shadow-gold">
+        <BadgeCheck className="mx-auto mb-3 h-9 w-9 text-primary" />
+        <p className="text-sm font-bold leading-7 text-foreground">قم بربط حسابك الآن لضمان حفظ أرصدتك، نغماتك المخصصة، وتفضيلاتك السحابية، واستمتع بمساحة تخزين إضافية مجانية.</p>
+        {!user && <Button variant="gold" className="mt-4 w-full" onClick={signInWithGoogle}><Chrome className="h-4 w-4" /> ربط الحساب عبر Google الآن</Button>}
+      </div>
+      <div className="rounded-3xl border border-border/50 bg-secondary/30 p-6 text-center shadow-gold">
+        <Gift className="mx-auto mb-4 h-12 w-12 text-primary" />
+        <p className="mb-4 text-sm font-bold text-muted-foreground">الرصيد الحالي: {credits}</p>
+        <Button variant="gold" size="lg" className="w-full" onClick={rewardAd}>
+          <Gift className="h-5 w-5" /> شاهد إعلاناً للحصول على 5 أرصدة إضافية
+        </Button>
+      </div>
     </div>
 
     <div className="rounded-3xl border border-border/50 bg-background/40 p-4">
@@ -690,7 +702,7 @@ const HomeSection = ({ credits, rewardAd }: { credits: string; rewardAd: () => v
           { label: "Instagram", icon: Instagram },
           { label: "Twitter", icon: Twitter },
         ].map((item) => (
-          <Button key={item.label} variant="glass" size="icon" aria-label={`مشاركة عبر ${item.label}`} onClick={() => navigator.share?.({ title: "مدار", text: "تطبيق مدار", url: window.location.origin })}>
+          <Button key={item.label} variant="glass" size="icon" aria-label={`مشاركة عبر ${item.label}`} onClick={() => shareApp(item.label)}>
             <item.icon className="h-5 w-5" />
           </Button>
         ))}
