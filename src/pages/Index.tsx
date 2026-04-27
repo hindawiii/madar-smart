@@ -21,6 +21,7 @@ import {
   Globe2,
   HardDriveDownload,
   Headphones,
+  HelpCircle,
   Info,
   Instagram,
   KeyRound,
@@ -169,6 +170,10 @@ const Index = () => {
   const [redialRetries, setRedialRetries] = useState("3");
   const [ringtone, setRingtone] = useState("نغمة النظام الهادئة");
   const [customRingtone, setCustomRingtone] = useState("");
+  const [customTones, setCustomTones] = useState<string[]>([]);
+  const [guideOpen, setGuideOpen] = useState(() => typeof window !== "undefined" && window.localStorage.getItem("madar_guide_seen") !== "true");
+  const [guideStep, setGuideStep] = useState(0);
+  const [timerCountdown, setTimerCountdown] = useState<number | null>(null);
   const [expiry, setExpiry] = useState("أسبوع واحد");
   const [selectedFormat, setSelectedFormat] = useState<MediaFormat | null>(null);
   const [qualitiesOpen, setQualitiesOpen] = useState(false);
@@ -190,6 +195,18 @@ const Index = () => {
   const detectedFormats = useMemo(() => detectFormats(detectedLink), [detectedLink]);
   const activeIndex = navItems.findIndex((item) => item.id === activeSection);
   const creditLabel = useMemo(() => `${credits} رصيد`, [credits]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const requestedSection = params.get("section") as Section | null;
+    if (requestedSection && navItems.some((item) => item.id === requestedSection)) setActiveSection(requestedSection);
+    if (params.get("instant") === "1") {
+      setActiveSection("call");
+      setCallStatus("تم تشغيل وضع المكالمة الفورية من اختصار الشاشة الرئيسية");
+      navigator.vibrate?.([180, 70, 180]);
+      setTimeout(() => notify("مكالمة فورية", "تم تجهيز وضع الإنقاذ السريع من اختصار التطبيق."), 450);
+    }
+  }, []);
 
   useEffect(() => {
     window.localStorage.setItem("madar_credits", String(credits));
@@ -227,13 +244,25 @@ const Index = () => {
     setQualitiesOpen(Boolean(detectedFormats.length));
   }, [detectedFormats]);
 
+  useEffect(() => {
+    if (timerCountdown === null) return;
+    if (timerCountdown <= 0) {
+      setTimerCountdown(null);
+      void startCall();
+      return;
+    }
+    const timer = window.setTimeout(() => setTimerCountdown((current) => current === null ? null : current - 1), 1000);
+    return () => window.clearTimeout(timer);
+  }, [timerCountdown]);
+
   const notify = (title: string, description: string) => toast({ title, description });
 
   const loadCloudUserData = async (currentUser: AuthUser) => {
     const fallbackName = currentUser.user_metadata?.full_name || currentUser.user_metadata?.name || currentUser.email || "مستخدم مدار";
-    const { data: profile } = await supabase.from("profiles").select("display_name").eq("user_id", currentUser.id).maybeSingle();
+    const { data: profile } = await (supabase.from("profiles") as any).select("display_name, custom_tones").eq("user_id", currentUser.id).maybeSingle();
     const { data: cloudCredits } = await supabase.from("user_credits").select("credits").eq("user_id", currentUser.id).maybeSingle();
     setProfileName(profile?.display_name || fallbackName);
+    if (Array.isArray(profile?.custom_tones)) setCustomTones(profile.custom_tones);
     if (typeof cloudCredits?.credits === "number") setCredits(cloudCredits.credits);
   };
 
@@ -317,9 +346,32 @@ const Index = () => {
   const handleRingtoneUpload = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
+    const nextTones = Array.from(new Set([file.name, ...customTones])).slice(0, 8);
     setCustomRingtone(file.name);
+    setCustomTones(nextTones);
     setRingtone("نغمة مخصصة");
-    notify("تم رفع النغمة", `تم اعتماد النغمة المخصصة: ${file.name}.`);
+    if (user) void (supabase.from("profiles") as any).update({ custom_tones: nextTones }).eq("user_id", user.id);
+    notify("تم رفع النغمة", `تم اعتماد النغمة المخصصة: ${file.name} وحفظها ضمن تفضيلاتك السحابية.`);
+  };
+
+  const startScheduledCall = () => {
+    const seconds = Math.max(5, Number(callDelay) * 60);
+    setTimerCountdown(seconds);
+    setCallStatus(`المؤقت نشط — ستبدأ المكالمة بعد ${callDelay} دقيقة`);
+    notify("تم تفعيل المؤقت", "بدأ العد التنازلي الهادئ للمكالمة الوهمية وفق إعداداتك الحالية.");
+  };
+
+  const shareApp = async (platformName: string) => {
+    const payload = { title: "مدار", text: "جرّب تطبيق مدار للأدوات الذكية العربية.", url: window.location.origin };
+    try {
+      if (navigator.share) await navigator.share(payload);
+      else {
+        await navigator.clipboard?.writeText(payload.url);
+        notify("تم نسخ رابط التطبيق", `يمكنك الآن مشاركته عبر ${platformName}.`);
+      }
+    } catch {
+      notify("لم تكتمل المشاركة", "أغلق المتصفح نافذة المشاركة قبل إتمام الإرسال.");
+    }
   };
 
   const analyzeClipboard = async () => {
@@ -440,10 +492,10 @@ const Index = () => {
     <main className="min-h-screen overflow-hidden bg-orbit font-cairo text-foreground">
       <div className="pointer-events-none fixed inset-0 orbit-grid opacity-60" />
       <div className="relative mx-auto flex min-h-screen w-full max-w-7xl flex-col px-4 pb-28 pt-4 sm:px-6 lg:px-8">
-        <Header credits={creditLabel} user={user} profileName={profileName} darkMode={darkMode} setDarkMode={setDarkMode} cleanCache={cleanCache} notify={notify} signInWithGoogle={signInWithGoogle} signOut={signOut} />
+        <Header credits={creditLabel} user={user} profileName={profileName} darkMode={darkMode} setDarkMode={setDarkMode} cleanCache={cleanCache} notify={notify} signInWithGoogle={signInWithGoogle} signOut={signOut} openGuide={() => { setGuideStep(0); setGuideOpen(true); }} />
 
         <section className="flex-1 py-6">
-          {activeSection === "home" && <HomeSection credits={creditLabel} rewardAd={rewardAd} />}
+          {activeSection === "home" && <HomeSection credits={creditLabel} rewardAd={rewardAd} user={user} signInWithGoogle={signInWithGoogle} shareApp={shareApp} />}
           {activeSection === "call" && (
             <AppShell>
               <FakeCallDashboard
@@ -462,6 +514,9 @@ const Index = () => {
                 customRingtone={customRingtone}
                 setRingtone={setRingtone}
                 handleRingtoneUpload={handleRingtoneUpload}
+                customTones={customTones}
+                timerCountdown={timerCountdown}
+                startScheduledCall={startScheduledCall}
                 callFrameRef={callFrameRef}
               />
             </AppShell>
@@ -516,6 +571,7 @@ const Index = () => {
         </section>
       </div>
 
+      {guideOpen && <UserGuide step={guideStep} setStep={setGuideStep} closeGuide={() => { window.localStorage.setItem("madar_guide_seen", "true"); setGuideOpen(false); }} />}
       <FloatingNavigation activeSection={activeSection} setActiveSection={setActiveSection} activeIndex={activeIndex} />
     </main>
   );
@@ -531,6 +587,7 @@ const Header = ({
   notify,
   signInWithGoogle,
   signOut,
+  openGuide,
 }: {
   credits: string;
   user: AuthUser | null;
@@ -541,6 +598,7 @@ const Header = ({
   notify: (title: string, description: string) => void;
   signInWithGoogle: () => void;
   signOut: () => void;
+  openGuide: () => void;
 }) => (
   <header className="glass-panel sticky top-4 z-30 flex items-center justify-between rounded-2xl px-4 py-3">
     <div className="flex items-center gap-3">
@@ -558,6 +616,9 @@ const Header = ({
         <Sparkles className="h-4 w-4 text-primary" />
         {credits}
       </div>
+      <Button variant="glass" size="icon" aria-label="فتح دليل الاستخدام" onClick={openGuide}>
+        <HelpCircle className="h-5 w-5" />
+      </Button>
       <Drawer direction="right">
         <DrawerTrigger asChild>
           <Button variant="glass" size="icon" aria-label="فتح الإعدادات">
@@ -612,14 +673,21 @@ const Header = ({
 
 const AppShell = ({ children }: { children: React.ReactNode }) => <section className="glass-panel min-h-[620px] rounded-3xl p-3 sm:p-5">{children}</section>;
 
-const HomeSection = ({ credits, rewardAd }: { credits: string; rewardAd: () => void }) => (
+const HomeSection = ({ credits, rewardAd, user, signInWithGoogle, shareApp }: { credits: string; rewardAd: () => void; user: AuthUser | null; signInWithGoogle: () => void; shareApp: (platformName: string) => void }) => (
   <section className="flex min-h-[620px] flex-col justify-between rounded-3xl border border-border/50 bg-gradient-glass p-5 shadow-glass sm:p-8">
-    <div className="mx-auto w-full max-w-xl rounded-3xl border border-border/50 bg-secondary/30 p-6 text-center shadow-gold">
-      <Gift className="mx-auto mb-4 h-12 w-12 text-primary" />
-      <p className="mb-4 text-sm font-bold text-muted-foreground">الرصيد الحالي: {credits}</p>
-      <Button variant="gold" size="lg" className="w-full" onClick={rewardAd}>
-        <Gift className="h-5 w-5" /> شاهد إعلاناً للحصول على 5 أرصدة إضافية
-      </Button>
+    <div className="mx-auto w-full max-w-2xl space-y-4">
+      <div className="rounded-3xl border border-primary/40 bg-primary/10 p-5 text-center shadow-gold">
+        <BadgeCheck className="mx-auto mb-3 h-9 w-9 text-primary" />
+        <p className="text-sm font-bold leading-7 text-foreground">قم بربط حسابك الآن لضمان حفظ أرصدتك، نغماتك المخصصة، وتفضيلاتك السحابية، واستمتع بمساحة تخزين إضافية مجانية.</p>
+        {!user && <Button variant="gold" className="mt-4 w-full" onClick={signInWithGoogle}><Chrome className="h-4 w-4" /> ربط الحساب عبر Google الآن</Button>}
+      </div>
+      <div className="rounded-3xl border border-border/50 bg-secondary/30 p-6 text-center shadow-gold">
+        <Gift className="mx-auto mb-4 h-12 w-12 text-primary" />
+        <p className="mb-4 text-sm font-bold text-muted-foreground">الرصيد الحالي: {credits}</p>
+        <Button variant="gold" size="lg" className="w-full" onClick={rewardAd}>
+          <Gift className="h-5 w-5" /> شاهد إعلاناً للحصول على 5 أرصدة إضافية
+        </Button>
+      </div>
     </div>
 
     <div className="rounded-3xl border border-border/50 bg-background/40 p-4">
@@ -634,7 +702,7 @@ const HomeSection = ({ credits, rewardAd }: { credits: string; rewardAd: () => v
           { label: "Instagram", icon: Instagram },
           { label: "Twitter", icon: Twitter },
         ].map((item) => (
-          <Button key={item.label} variant="glass" size="icon" aria-label={`مشاركة عبر ${item.label}`} onClick={() => navigator.share?.({ title: "مدار", text: "تطبيق مدار", url: window.location.origin })}>
+          <Button key={item.label} variant="glass" size="icon" aria-label={`مشاركة عبر ${item.label}`} onClick={() => shareApp(item.label)}>
             <item.icon className="h-5 w-5" />
           </Button>
         ))}
@@ -665,6 +733,38 @@ const FloatingNavigation = ({ activeSection, setActiveSection, activeIndex }: { 
   </nav>
 );
 
+const guideCards = [
+  { icon: Radar, title: "مرحباً بك في مدار", body: "واجهة عربية فصحى تجمع المكالمة الوهمية، التحميل الذكي، والشير المحلي والسحابي ضمن تجربة داكنة ذهبية عالية الدقة." },
+  { icon: PhoneCall, title: "تفعيل المكالمة من الخارج", body: "اضغط مطولاً على أيقونة التطبيق في شاشتك الرئيسية واختر (مكالمة فورية) للإنقاذ السريع دون فتح التطبيق." },
+  { icon: HardDriveDownload, title: "المستشعر الذكي", body: "ألصق الرابط أو افتح منصة داخلية ليعرض مدار الجودات المتاحة فقط دون نوافذ مزعجة أو صيغ وهمية." },
+  { icon: Wifi, title: "الشير العالمي", body: "اختر ملفاً، أنشئ كوداً سحابياً أو اربط جهازاً قريباً عبر WebRTC لإرسال الملفات محلياً دون إنترنت." },
+];
+
+const UserGuide = ({ step, setStep, closeGuide }: { step: number; setStep: (step: number) => void; closeGuide: () => void }) => {
+  const card = guideCards[step];
+  const Icon = card.icon;
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-background/88 p-4 backdrop-blur-2xl">
+      <section className="w-full max-w-lg rounded-3xl border border-primary/50 bg-gradient-glass p-5 shadow-gold animate-scale-in">
+        <div className="mb-5 flex items-center justify-between">
+          <Button variant="glass" size="icon" onClick={closeGuide} aria-label="إغلاق دليل الاستخدام"><X className="h-4 w-4" /></Button>
+          <div className="flex gap-1">{guideCards.map((item, index) => <span key={item.title} className={`h-2 w-8 rounded-full ${index === step ? "bg-primary" : "bg-secondary"}`} />)}</div>
+        </div>
+        <div className="relative overflow-hidden rounded-3xl border border-border/50 bg-background/45 p-6 text-center">
+          <div className="mx-auto mb-5 flex h-20 w-20 items-center justify-center rounded-2xl bg-gradient-gold text-primary-foreground shadow-gold animate-float-slow"><Icon className="h-10 w-10" /></div>
+          <h2 className="text-3xl font-black gold-text">{card.title}</h2>
+          <p className="mt-4 text-sm font-semibold leading-8 text-muted-foreground">{card.body}</p>
+          {step === 1 && <div className="mx-auto mt-5 max-w-xs rounded-2xl border border-primary/40 bg-primary/10 p-4 text-right"><Smartphone className="mb-2 h-6 w-6 text-primary" /><p className="text-sm font-bold">اختصار الشاشة الرئيسية</p><p className="mt-1 text-xs leading-6 text-muted-foreground">مكالمة فورية • التحميل الذكي • الشير</p></div>}
+        </div>
+        <div className="mt-5 flex gap-3">
+          <Button variant="glass" className="flex-1" onClick={() => step > 0 ? setStep(step - 1) : closeGuide()}>{step > 0 ? "السابق" : "تخطي"}</Button>
+          <Button variant="gold" className="flex-1" onClick={() => step < guideCards.length - 1 ? setStep(step + 1) : closeGuide()}>{step < guideCards.length - 1 ? "التالي" : "بدء الاستخدام"}</Button>
+        </div>
+      </section>
+    </div>
+  );
+};
+
 const FakeCallDashboard = ({
   platform,
   setPlatform,
@@ -681,12 +781,15 @@ const FakeCallDashboard = ({
   customRingtone,
   setRingtone,
   handleRingtoneUpload,
+  customTones,
+  timerCountdown,
+  startScheduledCall,
   callFrameRef,
 }: {
   platform: Platform;
   setPlatform: (platform: Platform) => void;
   callStatus: string;
-  startCall: () => void;
+  startCall: () => void | Promise<void>;
   declineCall: () => void;
   callDelay: string;
   setCallDelay: (value: string) => void;
@@ -698,6 +801,9 @@ const FakeCallDashboard = ({
   customRingtone: string;
   setRingtone: (value: string) => void;
   handleRingtoneUpload: (event: ChangeEvent<HTMLInputElement>) => void;
+  customTones: string[];
+  timerCountdown: number | null;
+  startScheduledCall: () => void;
   callFrameRef: React.RefObject<HTMLDivElement>;
 }) => (
   <div className="grid gap-5 lg:grid-cols-[1fr_0.86fr]">
@@ -705,6 +811,10 @@ const FakeCallDashboard = ({
       <SectionTitle icon={Phone} title="لوحة المكالمة الوهمية" subtitle="تحكم كامل في التوقيت، النظام، الرنين، الاهتزاز، وملء الشاشة الواقعي." />
       <Button variant="gold" size="lg" className="w-full" onClick={startCall}>
         <Maximize2 className="h-5 w-5" /> ابدأ المكالمة بملء الشاشة
+      </Button>
+      <Button variant="glass" size="lg" className="w-full justify-between" onClick={startScheduledCall}>
+        <span className="flex items-center gap-2"><Timer className="h-5 w-5" /> تفعيل المؤقت</span>
+        <span>{timerCountdown === null ? `${callDelay} دقائق` : `${timerCountdown} ثانية`}</span>
       </Button>
       <ControlPanel title="جدولة المكالمة" icon={CalendarClock}>
         <div className="grid grid-cols-3 gap-2">
@@ -741,6 +851,7 @@ const FakeCallDashboard = ({
           </label>
         </div>
         {customRingtone && <p className="mt-2 text-xs text-muted-foreground">النغمة الحالية: {customRingtone}</p>}
+        {!!customTones.length && <div className="mt-3 flex flex-wrap gap-2">{customTones.map((tone) => <span key={tone} className="rounded-full border border-primary/40 bg-primary/10 px-3 py-1 text-xs font-bold text-primary">{tone}</span>)}</div>}
       </ControlPanel>
     </div>
     <div className="mx-auto w-full max-w-sm">
@@ -845,6 +956,9 @@ const DownloaderHub = ({
               <span className="flex items-center gap-2"><Download className="h-4 w-4" /> عرض الجودات المتاحة</span>
               <span>{detectedFormats.length} صيغة</span>
             </Button>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {detectedFormats.map((row) => <button key={`chip-${row.kind}-${row.quality}`} onClick={() => setSelectedFormat(row)} className={`rounded-full border px-3 py-1 text-xs font-black transition-transform hover:-translate-y-0.5 ${selectedFormat?.quality === row.quality && selectedFormat?.kind === row.kind ? "border-primary bg-primary text-primary-foreground" : "border-primary/40 bg-primary/10 text-primary"}`}>{row.kind} {row.quality}</button>)}
+            </div>
             <div className={`grid overflow-hidden transition-all duration-300 ${qualitiesOpen ? "mt-3 max-h-[32rem] gap-2 opacity-100" : "max-h-0 gap-0 opacity-0"}`}>
               {detectedFormats.map((row) => {
                 const Icon = row.icon;
@@ -986,6 +1100,12 @@ const SmartShare = ({
           </div>
           <Wifi className="h-9 w-9 text-primary" />
         </div>
+        <label onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); setSharedFile(event.dataTransfer.files?.[0] ?? null); }} className="mb-4 flex min-h-32 cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-primary/60 bg-background/40 p-4 text-center transition-colors hover:bg-secondary/50">
+          <FileArchive className="mb-2 h-8 w-8 text-primary" />
+          <span className="font-black">اختيار ملف للنقل القريب</span>
+          <span className="mt-2 text-xs leading-6 text-muted-foreground">{sharedFile ? `${sharedFile.name} • ${formatFileSize(sharedFile.size)} • جاهز للمعاينة والإرسال` : "اسحب ملفاً هنا أو اضغط لاختياره قبل الإرسال"}</span>
+          <input type="file" className="sr-only" onChange={(event) => setSharedFile(event.target.files?.[0] ?? null)} />
+        </label>
         <div className="grid gap-3 sm:grid-cols-2">
           <LargeAction icon={Radio} label="تفعيل الإرسال" onClick={() => activateWebRtc("send")} />
           <LargeAction icon={Bluetooth} label="تفعيل الاستلام" onClick={() => activateWebRtc("receive")} />
