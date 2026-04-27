@@ -21,6 +21,7 @@ import {
   Globe2,
   HardDriveDownload,
   Headphones,
+  HelpCircle,
   Info,
   Instagram,
   KeyRound,
@@ -169,6 +170,10 @@ const Index = () => {
   const [redialRetries, setRedialRetries] = useState("3");
   const [ringtone, setRingtone] = useState("نغمة النظام الهادئة");
   const [customRingtone, setCustomRingtone] = useState("");
+  const [customTones, setCustomTones] = useState<string[]>([]);
+  const [guideOpen, setGuideOpen] = useState(() => typeof window !== "undefined" && window.localStorage.getItem("madar_guide_seen") !== "true");
+  const [guideStep, setGuideStep] = useState(0);
+  const [timerCountdown, setTimerCountdown] = useState<number | null>(null);
   const [expiry, setExpiry] = useState("أسبوع واحد");
   const [selectedFormat, setSelectedFormat] = useState<MediaFormat | null>(null);
   const [qualitiesOpen, setQualitiesOpen] = useState(false);
@@ -190,6 +195,18 @@ const Index = () => {
   const detectedFormats = useMemo(() => detectFormats(detectedLink), [detectedLink]);
   const activeIndex = navItems.findIndex((item) => item.id === activeSection);
   const creditLabel = useMemo(() => `${credits} رصيد`, [credits]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const requestedSection = params.get("section") as Section | null;
+    if (requestedSection && navItems.some((item) => item.id === requestedSection)) setActiveSection(requestedSection);
+    if (params.get("instant") === "1") {
+      setActiveSection("call");
+      setCallStatus("تم تشغيل وضع المكالمة الفورية من اختصار الشاشة الرئيسية");
+      navigator.vibrate?.([180, 70, 180]);
+      setTimeout(() => notify("مكالمة فورية", "تم تجهيز وضع الإنقاذ السريع من اختصار التطبيق."), 450);
+    }
+  }, []);
 
   useEffect(() => {
     window.localStorage.setItem("madar_credits", String(credits));
@@ -227,13 +244,25 @@ const Index = () => {
     setQualitiesOpen(Boolean(detectedFormats.length));
   }, [detectedFormats]);
 
+  useEffect(() => {
+    if (timerCountdown === null) return;
+    if (timerCountdown <= 0) {
+      setTimerCountdown(null);
+      void startCall();
+      return;
+    }
+    const timer = window.setTimeout(() => setTimerCountdown((current) => current === null ? null : current - 1), 1000);
+    return () => window.clearTimeout(timer);
+  }, [timerCountdown]);
+
   const notify = (title: string, description: string) => toast({ title, description });
 
   const loadCloudUserData = async (currentUser: AuthUser) => {
     const fallbackName = currentUser.user_metadata?.full_name || currentUser.user_metadata?.name || currentUser.email || "مستخدم مدار";
-    const { data: profile } = await supabase.from("profiles").select("display_name").eq("user_id", currentUser.id).maybeSingle();
+    const { data: profile } = await (supabase.from("profiles") as any).select("display_name, custom_tones").eq("user_id", currentUser.id).maybeSingle();
     const { data: cloudCredits } = await supabase.from("user_credits").select("credits").eq("user_id", currentUser.id).maybeSingle();
     setProfileName(profile?.display_name || fallbackName);
+    if (Array.isArray(profile?.custom_tones)) setCustomTones(profile.custom_tones);
     if (typeof cloudCredits?.credits === "number") setCredits(cloudCredits.credits);
   };
 
@@ -317,9 +346,32 @@ const Index = () => {
   const handleRingtoneUpload = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
+    const nextTones = Array.from(new Set([file.name, ...customTones])).slice(0, 8);
     setCustomRingtone(file.name);
+    setCustomTones(nextTones);
     setRingtone("نغمة مخصصة");
-    notify("تم رفع النغمة", `تم اعتماد النغمة المخصصة: ${file.name}.`);
+    if (user) void (supabase.from("profiles") as any).update({ custom_tones: nextTones }).eq("user_id", user.id);
+    notify("تم رفع النغمة", `تم اعتماد النغمة المخصصة: ${file.name} وحفظها ضمن تفضيلاتك السحابية.`);
+  };
+
+  const startScheduledCall = () => {
+    const seconds = Math.max(5, Number(callDelay) * 60);
+    setTimerCountdown(seconds);
+    setCallStatus(`المؤقت نشط — ستبدأ المكالمة بعد ${callDelay} دقيقة`);
+    notify("تم تفعيل المؤقت", "بدأ العد التنازلي الهادئ للمكالمة الوهمية وفق إعداداتك الحالية.");
+  };
+
+  const shareApp = async (platformName: string) => {
+    const payload = { title: "مدار", text: "جرّب تطبيق مدار للأدوات الذكية العربية.", url: window.location.origin };
+    try {
+      if (navigator.share) await navigator.share(payload);
+      else {
+        await navigator.clipboard?.writeText(payload.url);
+        notify("تم نسخ رابط التطبيق", `يمكنك الآن مشاركته عبر ${platformName}.`);
+      }
+    } catch {
+      notify("لم تكتمل المشاركة", "أغلق المتصفح نافذة المشاركة قبل إتمام الإرسال.");
+    }
   };
 
   const analyzeClipboard = async () => {
@@ -440,10 +492,10 @@ const Index = () => {
     <main className="min-h-screen overflow-hidden bg-orbit font-cairo text-foreground">
       <div className="pointer-events-none fixed inset-0 orbit-grid opacity-60" />
       <div className="relative mx-auto flex min-h-screen w-full max-w-7xl flex-col px-4 pb-28 pt-4 sm:px-6 lg:px-8">
-        <Header credits={creditLabel} user={user} profileName={profileName} darkMode={darkMode} setDarkMode={setDarkMode} cleanCache={cleanCache} notify={notify} signInWithGoogle={signInWithGoogle} signOut={signOut} />
+        <Header credits={creditLabel} user={user} profileName={profileName} darkMode={darkMode} setDarkMode={setDarkMode} cleanCache={cleanCache} notify={notify} signInWithGoogle={signInWithGoogle} signOut={signOut} openGuide={() => { setGuideStep(0); setGuideOpen(true); }} />
 
         <section className="flex-1 py-6">
-          {activeSection === "home" && <HomeSection credits={creditLabel} rewardAd={rewardAd} />}
+          {activeSection === "home" && <HomeSection credits={creditLabel} rewardAd={rewardAd} user={user} signInWithGoogle={signInWithGoogle} shareApp={shareApp} />}
           {activeSection === "call" && (
             <AppShell>
               <FakeCallDashboard
@@ -462,6 +514,9 @@ const Index = () => {
                 customRingtone={customRingtone}
                 setRingtone={setRingtone}
                 handleRingtoneUpload={handleRingtoneUpload}
+                customTones={customTones}
+                timerCountdown={timerCountdown}
+                startScheduledCall={startScheduledCall}
                 callFrameRef={callFrameRef}
               />
             </AppShell>
@@ -516,6 +571,7 @@ const Index = () => {
         </section>
       </div>
 
+      {guideOpen && <UserGuide step={guideStep} setStep={setGuideStep} closeGuide={() => { window.localStorage.setItem("madar_guide_seen", "true"); setGuideOpen(false); }} />}
       <FloatingNavigation activeSection={activeSection} setActiveSection={setActiveSection} activeIndex={activeIndex} />
     </main>
   );
