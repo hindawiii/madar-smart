@@ -198,6 +198,13 @@ const Index = () => {
     { id: "nearby-1", name: "هاتف قريب", status: "جاهز للاقتران" },
     { id: "nearby-2", name: "حاسوب العمل", status: "تم العثور عليه" },
   ]);
+  const [vaultUnlocked, setVaultUnlocked] = useState(false);
+  const [vaultPin, setVaultPin] = useState(() => window.localStorage.getItem("madar_vault_pin") || "");
+  const [pinEntry, setPinEntry] = useState("");
+  const [patternEntry, setPatternEntry] = useState("");
+  const [ghostMode, setGhostMode] = useState(() => window.localStorage.getItem("madar_ghost_mode") === "true");
+  const [vaultFiles, setVaultFiles] = useState<VaultFile[]>(() => JSON.parse(window.localStorage.getItem(VAULT_STORAGE_KEY) || "[]") as VaultFile[]);
+  const [lockedApps, setLockedApps] = useState<string[]>(() => JSON.parse(window.localStorage.getItem("madar_locked_apps") || "[]") as string[]);
   const callFrameRef = useRef<HTMLDivElement>(null);
   const scannerVideoRef = useRef<HTMLVideoElement>(null);
 
@@ -263,6 +270,33 @@ const Index = () => {
     const timer = window.setTimeout(() => setTimerCountdown((current) => current === null ? null : current - 1), 1000);
     return () => window.clearTimeout(timer);
   }, [timerCountdown]);
+
+  useEffect(() => {
+    window.localStorage.setItem(VAULT_STORAGE_KEY, JSON.stringify(vaultFiles));
+  }, [vaultFiles]);
+
+  useEffect(() => {
+    window.localStorage.setItem("madar_ghost_mode", String(ghostMode));
+    setVaultFiles((files) => files.map((file) => ({ ...file, hidden: ghostMode || file.hidden })));
+  }, [ghostMode]);
+
+  useEffect(() => {
+    window.localStorage.setItem("madar_locked_apps", JSON.stringify(lockedApps));
+  }, [lockedApps]);
+
+  useEffect(() => {
+    const lockOnFlip = (event: DeviceOrientationEvent) => {
+      if (!vaultUnlocked) return;
+      const beta = Math.abs(event.beta ?? 0);
+      const gamma = Math.abs(event.gamma ?? 0);
+      if (beta > 145 && gamma < 35) {
+        setVaultUnlocked(false);
+        notify("تم تفعيل الخروج الآمن", "أُغلق مخزن الخصوصية فوراً بعد اكتشاف وضع الهاتف على وجهه.");
+      }
+    };
+    window.addEventListener("deviceorientation", lockOnFlip);
+    return () => window.removeEventListener("deviceorientation", lockOnFlip);
+  }, [vaultUnlocked]);
 
   const notify = (title: string, description: string) => toast({ title, description });
 
