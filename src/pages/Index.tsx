@@ -263,15 +263,25 @@ const Index = () => {
   }, [detectedFormats]);
 
   useEffect(() => {
-    if (timerCountdown === null) return;
-    if (timerCountdown <= 0) {
-      setTimerCountdown(null);
-      void startCall();
-      return;
-    }
-    const timer = window.setTimeout(() => setTimerCountdown((current) => current === null ? null : current - 1), 1000);
-    return () => window.clearTimeout(timer);
-  }, [timerCountdown]);
+    if (!callTargetTime) return;
+    const tick = () => {
+      const remaining = Math.max(0, Math.ceil((callTargetTime - Date.now()) / 1000));
+      setTimerCountdown(remaining);
+      if (remaining <= 0) {
+        setCallTargetTime(null);
+        window.localStorage.removeItem("madar_call_target");
+        void triggerScheduledCall();
+      }
+    };
+    tick();
+    const timer = window.setInterval(tick, 1000);
+    const onVisible = () => document.visibilityState === "visible" && tick();
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [callTargetTime]);
 
   useEffect(() => {
     window.localStorage.setItem(VAULT_STORAGE_KEY, JSON.stringify(vaultFiles));
