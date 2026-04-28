@@ -1477,8 +1477,30 @@ const PrivacyVault = ({
         </div>
       </div>
     )}
+    <PatternLockModal open={patternModalOpen} setOpen={setPatternModalOpen} patternEntry={patternEntry} setPatternEntry={setPatternEntry} />
   </div>
 );
+
+const PatternLockModal = ({ open, setOpen, patternEntry, setPatternEntry }: { open: boolean; setOpen: (value: boolean) => void; patternEntry: string; setPatternEntry: (value: string) => void }) => {
+  const selected = patternEntry ? patternEntry.split("-") : [];
+  const toggleNode = (node: string) => setPatternEntry(selected.includes(node) ? selected.filter((item) => item !== node).join("-") : [...selected, node].join("-"));
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogContent className="w-[calc(100vw-2rem)] max-w-sm rounded-3xl border-primary/50 bg-gradient-glass p-5 text-right shadow-gold backdrop-blur-2xl">
+        <DialogTitle className="text-2xl font-black gold-text">إنشاء نمط القفل</DialogTitle>
+        <div className="relative mx-auto mt-4 grid w-full max-w-[17rem] grid-cols-3 gap-4 rounded-3xl border border-border/50 bg-background/35 p-5">
+          <div className="pointer-events-none absolute left-8 right-8 top-1/2 h-1 -translate-y-1/2 rounded-full bg-primary/50 shadow-gold" />
+          {Array.from({ length: 9 }, (_, index) => String(index + 1)).map((node) => {
+            const active = selected.includes(node);
+            return <button key={node} onPointerEnter={() => selected.length && !active && toggleNode(node)} onClick={() => toggleNode(node)} className={`relative z-10 grid aspect-square place-items-center rounded-full border text-lg font-black transition-all ${active ? "border-primary bg-primary text-primary-foreground shadow-gold scale-105" : "border-border/60 bg-secondary/60 text-primary"}`}>{node}</button>;
+          })}
+        </div>
+        <p className="text-center text-sm font-bold text-muted-foreground">{patternEntry || "المس النقاط بالترتيب لإنشاء النمط"}</p>
+        <Button variant="gold" className="w-full" onClick={() => setOpen(false)} disabled={selected.length < 4}>حفظ النمط</Button>
+      </DialogContent>
+    </Dialog>
+  );
+};
 
 const SectionTitle = ({ icon: Icon, title, subtitle }: { icon: typeof Phone; title: string; subtitle: string }) => (
   <div className="flex items-start justify-between gap-4">
