@@ -63,6 +63,7 @@ import {
   Zap,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import {
   Drawer,
   DrawerClose,
@@ -87,7 +88,7 @@ type Platform = "android" | "ios";
 type MediaFormat = { kind: "فيديو" | "صوت"; quality: string; sizeMb: number; extension: "mp4" | "mp3"; icon: typeof FileVideo };
 type SharedFileRecord = { code: string; name: string; size: number; expiry: string; createdAt: number; url: string };
 type ConnectedDevice = { id: string; name: string; status: string };
-type VaultFile = { id: string; name: string; size: number; type: string; hidden: boolean; encryptedAt: number };
+type VaultFile = { id: string; name: string; size: number; type: string; hidden: boolean; encryptedAt: number; thumbnail?: string };
 type ShareMode = "cloud" | "nearby" | null;
 
 const CREDIT_COST: Record<PaidAction, number> = { call: 1, download: 1 };
@@ -205,6 +206,7 @@ const Index = () => {
   const [vaultPin, setVaultPin] = useState(() => window.localStorage.getItem("madar_vault_pin") || "");
   const [pinEntry, setPinEntry] = useState("");
   const [patternEntry, setPatternEntry] = useState("");
+  const [patternModalOpen, setPatternModalOpen] = useState(false);
   const [ghostMode, setGhostMode] = useState(() => window.localStorage.getItem("madar_ghost_mode") === "true");
   const [vaultFiles, setVaultFiles] = useState<VaultFile[]>(() => JSON.parse(window.localStorage.getItem(VAULT_STORAGE_KEY) || "[]") as VaultFile[]);
   const [lockedApps, setLockedApps] = useState<string[]>(() => JSON.parse(window.localStorage.getItem("madar_locked_apps") || "[]") as string[]);
