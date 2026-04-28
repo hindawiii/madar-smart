@@ -1458,11 +1458,14 @@ const PrivacyVault = ({
                   <div className="space-y-2 p-2.5">
                     <p className="truncate text-xs font-black">{file.name}</p>
                     <p className="text-[0.68rem] text-muted-foreground">{formatFileSize(file.size)} • {file.hidden ? "مخفي" : "محمي"}</p>
-                    <div className="grid gap-1">
-                      <Button variant="glass" size="sm" className="h-8 text-xs" onClick={() => manageVaultFile(file, "view")}><Play className="h-3.5 w-3.5" /> معاينة المحتوى</Button>
-                      <Button variant="glass" size="sm" className="h-8 text-xs" onClick={() => manageVaultFile(file, "restore")}><Lock className="h-3.5 w-3.5" /> إلغاء القفل</Button>
-                      <Button variant="destructive" size="sm" className="h-8 text-xs" onClick={() => manageVaultFile(file, "delete")}><Trash2 className="h-3.5 w-3.5" /> حذف نهائي</Button>
-                    </div>
+                    <details className="group relative">
+                      <summary className="flex h-8 cursor-pointer list-none items-center justify-center gap-2 rounded-md border border-border/60 bg-background/50 text-xs font-bold text-foreground"><MoreVertical className="h-3.5 w-3.5 text-primary" /> قائمة الملف</summary>
+                      <div className="absolute inset-x-0 bottom-9 z-20 grid gap-1 rounded-xl border border-border/60 bg-popover/95 p-1.5 shadow-glass backdrop-blur-xl">
+                        <button className="rounded-lg px-2 py-2 text-right text-xs font-bold hover:bg-secondary" onClick={() => manageVaultFile(file, "view")}><Play className="ml-1 inline h-3.5 w-3.5 text-primary" /> معاينة المحتوى</button>
+                        <button className="rounded-lg px-2 py-2 text-right text-xs font-bold hover:bg-secondary" onClick={() => manageVaultFile(file, "restore")}><Lock className="ml-1 inline h-3.5 w-3.5 text-primary" /> إلغاء القفل</button>
+                        <button className="rounded-lg px-2 py-2 text-right text-xs font-bold text-destructive-foreground hover:bg-destructive" onClick={() => manageVaultFile(file, "delete")}><Trash2 className="ml-1 inline h-3.5 w-3.5" /> حذف نهائي</button>
+                      </div>
+                    </details>
                   </div>
                 </div>
               )) : <p className="rounded-2xl border border-border/50 bg-secondary/30 p-4 text-sm text-muted-foreground">لا توجد ملفات داخل المخزن بعد.</p>}
