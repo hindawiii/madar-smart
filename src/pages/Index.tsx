@@ -86,14 +86,17 @@ type Section = "home" | "call" | "download" | "share" | "privacy";
 type PaidAction = "call" | "download";
 type Platform = "android" | "ios";
 type MediaFormat = { kind: "فيديو" | "صوت"; quality: string; sizeMb: number; extension: "mp4" | "mp3"; icon: typeof FileVideo };
-type SharedFileRecord = { code: string; name: string; size: number; expiry: string; createdAt: number; url: string };
+type SharedFileRecord = { code: string; name: string; size: number; expiry: string; createdAt: number; dataUrl: string; type: string };
 type ConnectedDevice = { id: string; name: string; status: string };
-type VaultFile = { id: string; name: string; size: number; type: string; hidden: boolean; encryptedAt: number; thumbnail?: string };
+type VaultFile = { id: string; name: string; size: number; type: string; hidden: boolean; encryptedAt: number; thumbnail?: string; dataUrl?: string; storagePath?: string };
 type ShareMode = "cloud" | "nearby" | null;
+type VaultAuthMethod = "pin" | "pattern" | "biometric";
+type VaultSetupStep = "method" | "create" | "confirm" | "unlock";
 
 const CREDIT_COST: Record<PaidAction, number> = { call: 1, download: 1 };
 const SHARE_STORAGE_KEY = "madar_share_records";
 const VAULT_STORAGE_KEY = "madar_privacy_vault";
+const VAULT_BIOMETRIC_KEY = "madar_vault_biometric";
 
 const navItems: Array<{ id: Section; label: string; icon: typeof PhoneCall }> = [
   { id: "home", label: "الرئيسية", icon: Radar },
@@ -130,6 +133,58 @@ const readFileAsDataUrl = (file: File) => new Promise<string>((resolve) => {
 });
 
 const createCode = () => String(Math.floor(100000 + Math.random() * 900000));
+
+const dbRequest = () => new Promise<IDBDatabase>((resolve, reject) => {
+  const request = indexedDB.open("madar-secure-store", 1);
+  request.onupgradeneeded = () => {
+    const db = request.result;
+    if (!db.objectStoreNames.contains("files")) db.createObjectStore("files");
+  };
+  request.onsuccess = () => resolve(request.result);
+  request.onerror = () => reject(request.error);
+});
+
+const saveBinaryRecord = async (key: string, value: string) => {
+  const db = await dbRequest();
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction("files", "readwrite");
+    tx.objectStore("files").put(value, key);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+  db.close();
+};
+
+const readBinaryRecord = async (key: string) => {
+  const db = await dbRequest();
+  const value = await new Promise<string | undefined>((resolve, reject) => {
+    const tx = db.transaction("files", "readonly");
+    const request = tx.objectStore("files").get(key);
+    request.onsuccess = () => resolve(request.result as string | undefined);
+    request.onerror = () => reject(request.error);
+  });
+  db.close();
+  return value;
+};
+
+const deleteBinaryRecord = async (key: string) => {
+  const db = await dbRequest();
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction("files", "readwrite");
+    tx.objectStore("files").delete(key);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+  db.close();
+};
+
+const downloadDataUrl = (dataUrl: string, fileName: string) => {
+  const anchor = document.createElement("a");
+  anchor.href = dataUrl;
+  anchor.download = fileName;
+  anchor.click();
+};
+
 
 const detectFormats = (link: string): MediaFormat[] => {
   const normalized = link.toLowerCase();
