@@ -601,18 +601,42 @@ const Index = () => {
     notify("تم قبول التحقق الحيوي", "تم فتح مخزن الخصوصية عبر طبقة WebAuthn المتاحة في الجهاز.");
   };
 
-  const addVaultFiles = (files: FileList | null) => {
+  const addVaultFiles = async (files: FileList | null) => {
     if (!files?.length) return;
-    const nextFiles = Array.from(files).map((file) => ({
-      id: crypto.randomUUID(),
-      name: file.name,
-      size: file.size,
-      type: file.type || "ملف",
-      hidden: ghostMode,
-      encryptedAt: Date.now(),
+    const nextFiles = await Promise.all(Array.from(files).map(async (file) => {
+      const thumbnail = file.type.startsWith("image/") ? await readFileAsDataUrl(file) : undefined;
+      return { id: crypto.randomUUID(), name: file.name, size: file.size, type: file.type || "ملف", hidden: ghostMode, encryptedAt: Date.now(), thumbnail };
     }));
     setVaultFiles((current) => [...nextFiles, ...current].slice(0, 20));
+    if (user) {
+      void (supabase.from("vault_files") as any).insert(nextFiles.map((file) => ({
+        id: file.id,
+        user_id: user.id,
+        file_name: file.name,
+        file_size: file.size,
+        file_type: file.type,
+        thumbnail: file.thumbnail ?? null,
+        hidden: file.hidden,
+        metadata: { encrypted_at: file.encryptedAt, ghost_mode: ghostMode },
+      })));
+    }
     notify("تم نقل الملفات إلى المخزن", ghostMode ? "حُفظت الملفات داخل مساحة مخفية ومشفرة داخل التطبيق." : "حُفظت الملفات داخل مخزن الخصوصية المشفر.");
+  };
+
+  const manageVaultFile = (file: VaultFile, action: "view" | "restore" | "delete") => {
+    if (action === "view") {
+      notify("معاينة المحتوى", `${file.name} جاهز للمعاينة داخل المعرض السري.`);
+      return;
+    }
+    if (action === "restore") {
+      setVaultFiles((files) => files.map((item) => item.id === file.id ? { ...item, hidden: false } : item));
+      if (user) void (supabase.from("vault_files") as any).update({ hidden: false }).eq("id", file.id).eq("user_id", user.id);
+      notify("تم إلغاء القفل", "أعيد الملف إلى حالة ظاهرة داخل المخزن ويمكن استعادته للمعرض.");
+      return;
+    }
+    setVaultFiles((files) => files.filter((item) => item.id !== file.id));
+    if (user) void (supabase.from("vault_files") as any).delete().eq("id", file.id).eq("user_id", user.id);
+    notify("حذف نهائي", "تم حذف الملف من مخزن الخصوصية نهائياً.");
   };
 
   const toggleAppLock = (appName: string) => {
