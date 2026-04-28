@@ -752,10 +752,13 @@ const Index = () => {
                 hasPin={Boolean(vaultPin)}
                 unlockVaultWithPin={unlockVaultWithPin}
                 unlockVaultWithBiometric={unlockVaultWithBiometric}
+                patternModalOpen={patternModalOpen}
+                setPatternModalOpen={setPatternModalOpen}
                 ghostMode={ghostMode}
                 setGhostMode={setGhostMode}
                 vaultFiles={vaultFiles}
                 addVaultFiles={addVaultFiles}
+                manageVaultFile={manageVaultFile}
                 lockedApps={lockedApps}
                 toggleAppLock={toggleAppLock}
                 notify={notify}
