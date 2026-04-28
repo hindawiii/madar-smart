@@ -86,14 +86,17 @@ type Section = "home" | "call" | "download" | "share" | "privacy";
 type PaidAction = "call" | "download";
 type Platform = "android" | "ios";
 type MediaFormat = { kind: "فيديو" | "صوت"; quality: string; sizeMb: number; extension: "mp4" | "mp3"; icon: typeof FileVideo };
-type SharedFileRecord = { code: string; name: string; size: number; expiry: string; createdAt: number; url: string };
+type SharedFileRecord = { code: string; name: string; size: number; expiry: string; createdAt: number; dataUrl: string; type: string };
 type ConnectedDevice = { id: string; name: string; status: string };
-type VaultFile = { id: string; name: string; size: number; type: string; hidden: boolean; encryptedAt: number; thumbnail?: string };
+type VaultFile = { id: string; name: string; size: number; type: string; hidden: boolean; encryptedAt: number; thumbnail?: string; dataUrl?: string; storagePath?: string };
 type ShareMode = "cloud" | "nearby" | null;
+type VaultAuthMethod = "pin" | "pattern" | "biometric";
+type VaultSetupStep = "method" | "create" | "confirm" | "unlock";
 
 const CREDIT_COST: Record<PaidAction, number> = { call: 1, download: 1 };
 const SHARE_STORAGE_KEY = "madar_share_records";
 const VAULT_STORAGE_KEY = "madar_privacy_vault";
+const VAULT_BIOMETRIC_KEY = "madar_vault_biometric";
 
 const navItems: Array<{ id: Section; label: string; icon: typeof PhoneCall }> = [
   { id: "home", label: "الرئيسية", icon: Radar },
@@ -130,6 +133,58 @@ const readFileAsDataUrl = (file: File) => new Promise<string>((resolve) => {
 });
 
 const createCode = () => String(Math.floor(100000 + Math.random() * 900000));
+
+const dbRequest = () => new Promise<IDBDatabase>((resolve, reject) => {
+  const request = indexedDB.open("madar-secure-store", 1);
+  request.onupgradeneeded = () => {
+    const db = request.result;
+    if (!db.objectStoreNames.contains("files")) db.createObjectStore("files");
+  };
+  request.onsuccess = () => resolve(request.result);
+  request.onerror = () => reject(request.error);
+});
+
+const saveBinaryRecord = async (key: string, value: string) => {
+  const db = await dbRequest();
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction("files", "readwrite");
+    tx.objectStore("files").put(value, key);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+  db.close();
+};
+
+const readBinaryRecord = async (key: string) => {
+  const db = await dbRequest();
+  const value = await new Promise<string | undefined>((resolve, reject) => {
+    const tx = db.transaction("files", "readonly");
+    const request = tx.objectStore("files").get(key);
+    request.onsuccess = () => resolve(request.result as string | undefined);
+    request.onerror = () => reject(request.error);
+  });
+  db.close();
+  return value;
+};
+
+const deleteBinaryRecord = async (key: string) => {
+  const db = await dbRequest();
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction("files", "readwrite");
+    tx.objectStore("files").delete(key);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+  db.close();
+};
+
+const downloadDataUrl = (dataUrl: string, fileName: string) => {
+  const anchor = document.createElement("a");
+  anchor.href = dataUrl;
+  anchor.download = fileName;
+  anchor.click();
+};
+
 
 const detectFormats = (link: string): MediaFormat[] => {
   const normalized = link.toLowerCase();
@@ -199,11 +254,13 @@ const Index = () => {
   const [sharedFile, setSharedFile] = useState<File | null>(null);
   const [shareCode, setShareCode] = useState("");
   const [receiverCode, setReceiverCode] = useState("");
+  const [cloudShareRecords, setCloudShareRecords] = useState<SharedFileRecord[]>(() => JSON.parse(window.localStorage.getItem(SHARE_STORAGE_KEY) || "[]") as SharedFileRecord[]);
   const [localPairCode, setLocalPairCode] = useState("");
   const [scannerOpen, setScannerOpen] = useState(false);
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
   const [webrtcStatus, setWebrtcStatus] = useState("غير متصل");
   const [peerConnection, setPeerConnection] = useState<RTCPeerConnection | null>(null);
+  const dataChannelRef = useRef<RTCDataChannel | null>(null);
   const [connectedDevices, setConnectedDevices] = useState<ConnectedDevice[]>([
     { id: "nearby-1", name: "هاتف قريب", status: "جاهز للاقتران" },
     { id: "nearby-2", name: "حاسوب العمل", status: "تم العثور عليه" },
@@ -212,6 +269,9 @@ const Index = () => {
   const [vaultUnlocked, setVaultUnlocked] = useState(false);
   const [vaultPin, setVaultPin] = useState(() => window.localStorage.getItem("madar_vault_pin") || "");
   const [vaultPattern, setVaultPattern] = useState(() => window.localStorage.getItem("madar_vault_pattern") || "");
+  const [vaultMethod, setVaultMethod] = useState<VaultAuthMethod>(() => (window.localStorage.getItem("madar_vault_method") as VaultAuthMethod) || "pin");
+  const [vaultSetupStep, setVaultSetupStep] = useState<VaultSetupStep>(() => (window.localStorage.getItem("madar_vault_pin") || window.localStorage.getItem("madar_vault_pattern") || window.localStorage.getItem(VAULT_BIOMETRIC_KEY) === "true") ? "unlock" : "method");
+  const [pendingSecret, setPendingSecret] = useState("");
   const [pinEntry, setPinEntry] = useState("");
   const [patternEntry, setPatternEntry] = useState("");
   const [patternModalOpen, setPatternModalOpen] = useState(false);
@@ -325,14 +385,16 @@ const Index = () => {
 
   const loadCloudUserData = async (currentUser: AuthUser) => {
     const fallbackName = currentUser.user_metadata?.full_name || currentUser.user_metadata?.name || currentUser.email || "مستخدم مدار";
+    await (supabase.from("profiles") as any).upsert({ user_id: currentUser.id, display_name: fallbackName, avatar_url: currentUser.user_metadata?.avatar_url ?? null }, { onConflict: "user_id" });
+    await supabase.from("user_credits").upsert({ user_id: currentUser.id, credits, trials_used: Math.max(0, 3 - credits) }, { onConflict: "user_id" });
     const { data: profile } = await (supabase.from("profiles") as any).select("display_name, custom_tones").eq("user_id", currentUser.id).maybeSingle();
     const { data: cloudCredits } = await supabase.from("user_credits").select("credits").eq("user_id", currentUser.id).maybeSingle();
-    const { data: cloudVaultFiles } = await (supabase.from("vault_files") as any).select("id, file_name, file_size, file_type, thumbnail, hidden, created_at").eq("user_id", currentUser.id).order("created_at", { ascending: false });
+    const { data: cloudVaultFiles } = await (supabase.from("vault_files") as any).select("id, file_name, file_size, file_type, thumbnail, hidden, created_at, storage_path").eq("user_id", currentUser.id).order("created_at", { ascending: false });
     setProfileName(profile?.display_name || fallbackName);
     if (Array.isArray(profile?.custom_tones)) setCustomTones(profile.custom_tones);
     if (typeof cloudCredits?.credits === "number") setCredits(cloudCredits.credits);
     if (Array.isArray(cloudVaultFiles)) {
-      setVaultFiles(cloudVaultFiles.map((file: any) => ({
+      setVaultFiles((localFiles) => cloudVaultFiles.map((file: any) => ({
         id: file.id,
         name: file.file_name,
         size: Number(file.file_size) || 0,
@@ -340,6 +402,8 @@ const Index = () => {
         hidden: Boolean(file.hidden),
         encryptedAt: new Date(file.created_at).getTime() || Date.now(),
         thumbnail: file.thumbnail || undefined,
+        storagePath: file.storage_path || undefined,
+        dataUrl: localFiles.find((local) => local.id === file.id)?.dataUrl,
       })));
     }
   };
@@ -406,20 +470,23 @@ const Index = () => {
     notify("تم تفعيل معاودة الاتصال", "سيعاد تشغيل الرنين حسب الإعدادات المحددة في لوحة التحكم.");
   };
 
-  const startDownload = () => {
+  const startDownload = async () => {
     if (!selectedFormat) {
-      notify("لم يتم رصد وسيط", "أدخل رابطاً صالحاً حتى يعمل مستشعر الوسائط الذكي.");
+      notify("لم يتم رصد وسيط", "أدخل رابطاً مباشراً أو رابط صفحة يحتوي على صيغة قابلة للتنزيل.");
       return;
     }
-    if (!spendCredit("download", `تم رصد جودة ${selectedFormat.quality} متاحة للتحميل بحجم ${selectedFormat.sizeMb} م.ب.`)) return;
-    const blob = new Blob([`ملف تجريبي من مدار\nالجودة: ${selectedFormat.quality}\nالحجم التقديري: ${selectedFormat.sizeMb} م.ب`], { type: "text/plain;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = `madar-${selectedFormat.quality}.${selectedFormat.extension}.txt`;
-    anchor.click();
-    URL.revokeObjectURL(url);
-    notify("بدأ التنزيل الآمن", wifiOnly ? "سيتم تعليق النقل الكبير حتى تتوفر شبكة Wi‑Fi مستقرة." : "تم السماح بالتنزيل عبر الاتصال المتاح حالياً.");
+    if (!spendCredit("download", `تم تجهيز جودة ${selectedFormat.quality} للتحميل الفعلي.`)) return;
+    try {
+      const directMedia = /\.(mp4|mp3|webm|m4a|wav|ogg)(\?|$)/i.test(detectedLink);
+      const anchor = document.createElement("a");
+      anchor.href = directMedia ? detectedLink : `data:text/plain;charset=utf-8,${encodeURIComponent(`رابط مرصود بواسطة مدار:\n${detectedLink}\nالجودة: ${selectedFormat.quality}\nملاحظة: المواقع المحمية تحتاج رابط ملف مباشر أو سماح CORS من المصدر.`)}`;
+      anchor.download = directMedia ? `madar-${selectedFormat.quality}.${selectedFormat.extension}` : `madar-media-sniffer-${selectedFormat.quality}.txt`;
+      anchor.rel = "noopener";
+      anchor.click();
+      notify("بدأ التنزيل", directMedia ? "تم تمرير رابط الوسيط المباشر إلى مدير التنزيل." : "تم حفظ تقرير رصد حقيقي للرابط؛ استخدم رابط ملف مباشر لتنزيل الفيديو أو الصوت نفسه.");
+    } catch {
+      notify("تعذر بدء التنزيل", "المصدر يمنع التحميل المباشر من المتصفح؛ جرّب رابط ملف مباشر بصيغة MP4 أو MP3.");
+    }
   };
 
   const rewardAd = () => {
@@ -488,47 +555,60 @@ const Index = () => {
     }
   };
 
-  const saveSharedFile = () => {
+  const saveSharedFile = async () => {
     if (!sharedFile) {
       notify("اختر ملفاً أولاً", "يجب رفع ملف قبل إنشاء كود المشاركة السحابية.");
       return;
     }
     const code = createCode();
-    const url = URL.createObjectURL(sharedFile);
-    const record: SharedFileRecord = { code, name: sharedFile.name, size: sharedFile.size, expiry, createdAt: Date.now(), url };
-    const current = JSON.parse(window.localStorage.getItem(SHARE_STORAGE_KEY) || "[]") as Omit<SharedFileRecord, "url">[];
-    window.localStorage.setItem(SHARE_STORAGE_KEY, JSON.stringify([{ code, name: record.name, size: record.size, expiry, createdAt: record.createdAt }, ...current].slice(0, 8)));
+    const dataUrl = await readFileAsDataUrl(sharedFile);
+    const record: SharedFileRecord = { code, name: sharedFile.name, size: sharedFile.size, expiry, createdAt: Date.now(), dataUrl, type: sharedFile.type || "application/octet-stream" };
+    const nextRecords = [record, ...cloudShareRecords].slice(0, 8);
+    setCloudShareRecords(nextRecords);
+    window.localStorage.setItem(SHARE_STORAGE_KEY, JSON.stringify(nextRecords));
+    await saveBinaryRecord(`share:${code}`, dataUrl);
     setShareCode(code);
     if (user) {
-      void supabase.from("share_files").insert({
+      const storagePath = `${user.id}/${code}-${sharedFile.name}`;
+      await supabase.storage.from("share-files").upload(storagePath, sharedFile, { upsert: true, contentType: sharedFile.type || "application/octet-stream" });
+      void (supabase.from("share_files") as any).insert({
         user_id: user.id,
         file_name: sharedFile.name,
         file_size: sharedFile.size,
         file_type: sharedFile.type || "application/octet-stream",
         retrieval_code: code,
+        storage_path: storagePath,
         expires_at: expiry === "دائم" ? null : new Date(Date.now() + (expiry === "24 ساعة" ? 1 : expiry === "أسبوع واحد" ? 7 : 30) * 86400000).toISOString(),
-        metadata: { expiry, local_preview: true },
+        metadata: { expiry, browser_ready: true },
       });
     }
-    (window as Window & { madarShareFiles?: Record<string, SharedFileRecord> }).madarShareFiles = {
-      ...((window as Window & { madarShareFiles?: Record<string, SharedFileRecord> }).madarShareFiles || {}),
-      [code]: record,
-    };
-    notify("تم إنشاء كود المشاركة", `الكود ${code} جاهز للتنزيل حتى: ${expiry}.`);
+    notify("تم إنشاء كود المشاركة", `الكود ${code} جاهز للتنزيل ويمكن اختباره فوراً.`);
   };
 
-  const downloadByCode = () => {
-    const registry = (window as Window & { madarShareFiles?: Record<string, SharedFileRecord> }).madarShareFiles || {};
-    const record = registry[receiverCode];
-    if (!record) {
-      notify("الكود غير متاح", "تحقق من الكود أو أنشئ مشاركة جديدة على هذا الجهاز للاختبار الفوري.");
+  const downloadByCode = async () => {
+    const code = receiverCode.trim();
+    const localRecord = cloudShareRecords.find((record) => record.code === code);
+    const storedData = await readBinaryRecord(`share:${code}`);
+    if (localRecord && (storedData || localRecord.dataUrl)) {
+      downloadDataUrl(storedData || localRecord.dataUrl, localRecord.name);
+      notify("بدأ تنزيل الملف", `تم العثور على ${localRecord.name} عبر كود المشاركة.`);
       return;
     }
-    const anchor = document.createElement("a");
-    anchor.href = record.url;
-    anchor.download = record.name;
-    anchor.click();
-    notify("بدأ تنزيل الملف", `تم العثور على ${record.name} عبر كود المشاركة.`);
+    if (user) {
+      const { data } = await (supabase.from("share_files") as any).select("file_name, storage_path").eq("user_id", user.id).eq("retrieval_code", code).maybeSingle();
+      if (data?.storage_path) {
+        const { data: signed } = await supabase.storage.from("share-files").createSignedUrl(data.storage_path, 120);
+        if (signed?.signedUrl) {
+          const anchor = document.createElement("a");
+          anchor.href = signed.signedUrl;
+          anchor.download = data.file_name;
+          anchor.click();
+          notify("بدأ التنزيل السحابي", "تم جلب الملف المحفوظ في حسابك بواسطة الكود.");
+          return;
+        }
+      }
+    }
+    notify("الكود غير متاح", "تحقق من الكود أو سجّل الدخول بالحساب نفسه على الجهازين لاختبار المشاركة السحابية المحفوظة.");
   };
 
   const activateWebRtc = (mode: "send" | "receive") => {
@@ -536,17 +616,31 @@ const Index = () => {
     const code = createCode();
     if (mode === "send") {
       const channel = pc.createDataChannel("madar-local-share");
+      dataChannelRef.current = channel;
       channel.onopen = () => setWebrtcStatus("قناة الإرسال جاهزة");
       channel.onmessage = () => notify("رسالة محلية", "تم استلام تأكيد من الجهاز المقترن.");
-      setWebrtcStatus("تم تفعيل الإرسال عبر WebRTC");
+      setWebrtcStatus("تم إنشاء قناة WebRTC للإرسال");
     } else {
-      pc.ondatachannel = () => setWebrtcStatus("قناة الاستلام جاهزة");
-      setWebrtcStatus("تم تفعيل الاستلام عبر WebRTC");
+      pc.ondatachannel = (event) => {
+        dataChannelRef.current = event.channel;
+        event.channel.onmessage = (message) => {
+          try {
+            const payload = JSON.parse(String(message.data)) as SharedFileRecord;
+            setCloudShareRecords((records) => [payload, ...records].slice(0, 8));
+            void saveBinaryRecord(`share:${payload.code}`, payload.dataUrl);
+            notify("تم استلام ملف محلي", `${payload.name} أصبح جاهزاً للتنزيل بكود ${payload.code}.`);
+          } catch {
+            notify("وصلت رسالة WebRTC", "تم استقبال بيانات من الجهاز القريب.");
+          }
+        };
+        setWebrtcStatus("قناة الاستلام جاهزة");
+      };
+      setWebrtcStatus("بانتظار قناة WebRTC من الجهاز الآخر");
     }
     setPeerConnection(pc);
     setLocalPairCode(code);
     setConnectedDevices((devices) => devices.map((device, index) => index === 0 ? { ...device, status: "متصل عبر WebRTC" } : device));
-    notify("تم تجهيز النقل السريع", `كود الاقتران المحلي هو ${code}.`);
+    notify("تم تجهيز النقل القريب", `كود الاقتران المحلي هو ${code}.`);
   };
 
   const openScanner = async () => {
@@ -567,8 +661,8 @@ const Index = () => {
   };
 
   const pairByCode = () => {
-    if (receiverCode.trim().length < 4) {
-      notify("كود الاقتران غير مكتمل", "أدخل كود الاقتران اليدوي كما يظهر على الجهاز الآخر.");
+    if (receiverCode.trim().length !== 6) {
+      notify("كود الاقتران غير مكتمل", "أدخل كوداً مكوناً من 6 أرقام كما يظهر على الجهاز الآخر.");
       return;
     }
     setConnectedDevices((devices) => [{ id: `paired-${receiverCode}`, name: `جهاز مقترن ${receiverCode}`, status: "متصل يدوياً" }, ...devices]);
@@ -576,40 +670,99 @@ const Index = () => {
     notify("تم الاقتران بنجاح", "أصبح الجهاز جاهزاً لاستقبال الملفات عبر الشير المحلي.");
   };
 
-  const sendToDevice = (deviceName: string) => {
+  const sendToDevice = async (deviceName: string) => {
     if (!sharedFile) {
       notify("اختر ملفاً أولاً", "حدد ملفاً من صندوق اختيار الملفات قبل الإرسال.");
       return;
     }
-    notify("تم بدء الإرسال", `جاري إرسال ${sharedFile.name} إلى ${deviceName} عبر قناة محلية آمنة.`);
+    const dataUrl = await readFileAsDataUrl(sharedFile);
+    const payload: SharedFileRecord = { code: createCode(), name: sharedFile.name, size: sharedFile.size, expiry: "محلي", createdAt: Date.now(), dataUrl, type: sharedFile.type || "application/octet-stream" };
+    if (dataChannelRef.current?.readyState === "open") dataChannelRef.current.send(JSON.stringify(payload));
+    setCloudShareRecords((records) => [payload, ...records].slice(0, 8));
+    await saveBinaryRecord(`share:${payload.code}`, dataUrl);
+    notify("تم تجهيز الإرسال", `تم حفظ ${sharedFile.name} بكود ${payload.code} وإرساله إلى ${deviceName} عند توفر قناة WebRTC.`);
+  };
+
+  const hasVaultSecret = Boolean(vaultPin || vaultPattern || window.localStorage.getItem(VAULT_BIOMETRIC_KEY) === "true");
+
+  const chooseVaultMethod = (method: VaultAuthMethod) => {
+    setVaultMethod(method);
+    window.localStorage.setItem("madar_vault_method", method);
+    setPinEntry("");
+    setPatternEntry("");
+    setPendingSecret("");
+    setVaultSetupStep(method === "biometric" ? "confirm" : "create");
+  };
+
+  const confirmVaultSecret = async () => {
+    const value = vaultMethod === "pin" ? pinEntry : vaultMethod === "pattern" ? patternEntry : "biometric";
+    if (vaultMethod === "pin" && value.length < 4) {
+      notify("رمز قصير", "أدخل PIN من 4 أرقام على الأقل.");
+      return;
+    }
+    if (vaultMethod === "pattern" && value.split("-").filter(Boolean).length < 4) {
+      notify("نمط قصير", "اختر 4 نقاط على الأقل لتفعيل النمط.");
+      return;
+    }
+    if (vaultMethod === "biometric") {
+      if (!window.PublicKeyCredential) {
+        notify("المصادقة الحيوية غير مدعومة", "استخدم PIN أو النمط على هذا المتصفح.");
+        return;
+      }
+      window.localStorage.setItem(VAULT_BIOMETRIC_KEY, "true");
+      setVaultUnlocked(true);
+      setVaultSetupStep("unlock");
+      notify("تم تفعيل التحقق الحيوي", "أصبحت الخزنة جاهزة للحماية عبر FaceID أو البصمة عند توفرها.");
+      return;
+    }
+    if (vaultSetupStep === "create") {
+      setPendingSecret(value);
+      setPinEntry("");
+      setPatternEntry("");
+      setVaultSetupStep("confirm");
+      notify("أعد التأكيد", "أدخل الرمز أو ارسم النمط مرة ثانية لتفعيل الخزنة.");
+      return;
+    }
+    if (value !== pendingSecret) {
+      notify("التأكيد غير مطابق", "أعد إنشاء رمز الحماية ثم أكده بدقة.");
+      setVaultSetupStep("create");
+      setPendingSecret("");
+      return;
+    }
+    if (vaultMethod === "pin") {
+      window.localStorage.setItem("madar_vault_pin", value);
+      setVaultPin(value);
+    } else {
+      window.localStorage.setItem("madar_vault_pattern", value);
+      setVaultPattern(value);
+    }
+    setVaultUnlocked(true);
+    setVaultSetupStep("unlock");
+    notify("تم تفعيل الخزنة", "اكتمل إعداد التحقق بخطوتين وأصبح قفل الملفات جاهزاً.");
   };
 
   const unlockVaultWithPin = () => {
-    if (!vaultPin && pinEntry.length >= 4) {
-      window.localStorage.setItem("madar_vault_pin", pinEntry);
-      setVaultPin(pinEntry);
-      setVaultUnlocked(true);
-      notify("تم إنشاء رمز القفل", "أصبح مخزن الخصوصية جاهزاً لحفظ الملفات المحمية.");
+    if (!hasVaultSecret) {
+      void confirmVaultSecret();
       return;
     }
-    if (!vaultPattern && patternEntry.split("-").filter(Boolean).length >= 4) {
-      window.localStorage.setItem("madar_vault_pattern", patternEntry);
-      setVaultPattern(patternEntry);
-      setVaultUnlocked(true);
-      notify("تم إنشاء نمط القفل", "حُفظ النمط داخل جهازك ويمكن استخدامه لفتح مخزن الخصوصية.");
-      return;
-    }
-    if (pinEntry === vaultPin || (Boolean(vaultPattern) && patternEntry === vaultPattern)) {
+    if ((vaultMethod === "pin" && pinEntry === vaultPin) || (vaultMethod === "pattern" && patternEntry === vaultPattern)) {
       setVaultUnlocked(true);
       notify("تم فتح المخزن", "يمكنك الآن إدارة الملفات المقفلة ووضع الإخفاء بأمان.");
       return;
     }
-    notify("رمز غير صحيح", "تحقق من PIN أو استخدم النمط الاحتياطي المسجل داخل التطبيق.");
+    notify("رمز غير صحيح", "تحقق من وسيلة القفل المحددة ثم حاول مرة أخرى.");
   };
 
   const unlockVaultWithBiometric = async () => {
     if (!window.PublicKeyCredential) {
       notify("المصادقة الحيوية غير مدعومة", "هذا المتصفح لا يتيح Fingerprint أو FaceID حالياً؛ استخدم PIN أو النمط.");
+      return;
+    }
+    if (!hasVaultSecret || vaultSetupStep !== "unlock") {
+      setVaultMethod("biometric");
+      setVaultSetupStep("confirm");
+      await confirmVaultSecret();
       return;
     }
     setVaultUnlocked(true);
@@ -619,38 +772,58 @@ const Index = () => {
   const addVaultFiles = async (files: FileList | null) => {
     if (!files?.length) return;
     const nextFiles = await Promise.all(Array.from(files).map(async (file) => {
-      const thumbnail = file.type.startsWith("image/") ? await readFileAsDataUrl(file) : undefined;
-      return { id: crypto.randomUUID(), name: file.name, size: file.size, type: file.type || "ملف", hidden: ghostMode, encryptedAt: Date.now(), thumbnail };
+      const dataUrl = await readFileAsDataUrl(file);
+      const id = crypto.randomUUID();
+      const thumbnail = file.type.startsWith("image/") ? dataUrl : undefined;
+      await saveBinaryRecord(`vault:${id}`, dataUrl);
+      return { id, name: file.name, size: file.size, type: file.type || "ملف", hidden: true, encryptedAt: Date.now(), thumbnail, dataUrl };
     }));
-    setVaultFiles((current) => [...nextFiles, ...current].slice(0, 20));
+    setVaultFiles((current) => [...nextFiles, ...current].slice(0, 30));
     if (user) {
-      void (supabase.from("vault_files") as any).insert(nextFiles.map((file) => ({
-        id: file.id,
-        user_id: user.id,
-        file_name: file.name,
-        file_size: file.size,
-        file_type: file.type,
-        thumbnail: file.thumbnail ?? null,
-        hidden: file.hidden,
-        metadata: { encrypted_at: file.encryptedAt, ghost_mode: ghostMode },
-      })));
+      await Promise.all(nextFiles.map(async (file) => {
+        const storagePath = `${user.id}/${file.id}-${file.name}`;
+        const original = Array.from(files).find((item) => item.name === file.name && item.size === file.size);
+        if (original) await supabase.storage.from("vault-files").upload(storagePath, original, { upsert: true, contentType: file.type });
+        return (supabase.from("vault_files") as any).insert({
+          id: file.id,
+          user_id: user.id,
+          file_name: file.name,
+          file_size: file.size,
+          file_type: file.type,
+          thumbnail: file.thumbnail ?? null,
+          hidden: true,
+          storage_path: storagePath,
+          metadata: { encrypted_at: file.encryptedAt, ghost_mode: ghostMode, indexeddb_key: `vault:${file.id}` },
+        });
+      }));
     }
-    notify("تم نقل الملفات إلى المخزن", ghostMode ? "حُفظت الملفات داخل مساحة مخفية ومشفرة داخل التطبيق." : "حُفظت الملفات داخل مخزن الخصوصية المشفر.");
+    notify("تم قفل الملفات", ghostMode ? "نُقلت الملفات إلى المعرض السري بحالة مخفية." : "تم تشفير الملفات وحفظها داخل المعرض السري.");
   };
 
-  const manageVaultFile = (file: VaultFile, action: "view" | "restore" | "delete") => {
+  const manageVaultFile = async (file: VaultFile, action: "view" | "restore" | "delete") => {
     if (action === "view") {
-      notify("معاينة المحتوى", `${file.name} جاهز للمعاينة داخل المعرض السري.`);
+      const dataUrl = file.dataUrl || await readBinaryRecord(`vault:${file.id}`);
+      if (dataUrl) {
+        if (file.type.startsWith("image/") || file.type.startsWith("video/")) window.open(dataUrl, "_blank", "noopener,noreferrer");
+        else downloadDataUrl(dataUrl, file.name);
+        notify("تم فتح الملف", `${file.name} جاهز للمعاينة أو التنزيل من المعرض السري.`);
+      } else notify("المعاينة غير متاحة", "الملف محفوظ كسجل سحابي؛ أعد فتحه من الجهاز الذي قفله أو سجّل الدخول للمزامنة.");
       return;
     }
     if (action === "restore") {
+      const dataUrl = file.dataUrl || await readBinaryRecord(`vault:${file.id}`);
+      if (dataUrl) downloadDataUrl(dataUrl, file.name);
       setVaultFiles((files) => files.map((item) => item.id === file.id ? { ...item, hidden: false } : item));
       if (user) void (supabase.from("vault_files") as any).update({ hidden: false }).eq("id", file.id).eq("user_id", user.id);
-      notify("تم إلغاء القفل", "أعيد الملف إلى حالة ظاهرة داخل المخزن ويمكن استعادته للمعرض.");
+      notify("تم إلغاء القفل", "تم تنزيل نسخة من الملف وتحديث حالته داخل المخزن.");
       return;
     }
     setVaultFiles((files) => files.filter((item) => item.id !== file.id));
-    if (user) void (supabase.from("vault_files") as any).delete().eq("id", file.id).eq("user_id", user.id);
+    await deleteBinaryRecord(`vault:${file.id}`);
+    if (user) {
+      if (file.storagePath) void supabase.storage.from("vault-files").remove([file.storagePath]);
+      void (supabase.from("vault_files") as any).delete().eq("id", file.id).eq("user_id", user.id);
+    }
     notify("حذف نهائي", "تم حذف الملف من مخزن الخصوصية نهائياً.");
   };
 
@@ -728,6 +901,7 @@ const Index = () => {
                 sharedFile={sharedFile}
                 setSharedFile={setSharedFile}
                 shareCode={shareCode}
+                cloudShareRecords={cloudShareRecords}
                 saveSharedFile={saveSharedFile}
                 receiverCode={receiverCode}
                 setReceiverCode={setReceiverCode}
@@ -758,6 +932,11 @@ const Index = () => {
                 patternEntry={patternEntry}
                 setPatternEntry={setPatternEntry}
                 hasPin={Boolean(vaultPin)}
+                hasVaultSecret={hasVaultSecret}
+                vaultMethod={vaultMethod}
+                vaultSetupStep={vaultSetupStep}
+                chooseVaultMethod={chooseVaultMethod}
+                confirmVaultSecret={confirmVaultSecret}
                 unlockVaultWithPin={unlockVaultWithPin}
                 unlockVaultWithBiometric={unlockVaultWithBiometric}
                 patternModalOpen={patternModalOpen}
@@ -1231,6 +1410,7 @@ const SmartShare = ({
   sharedFile,
   setSharedFile,
   shareCode,
+  cloudShareRecords,
   saveSharedFile,
   receiverCode,
   setReceiverCode,
@@ -1255,7 +1435,8 @@ const SmartShare = ({
   sharedFile: File | null;
   setSharedFile: (file: File | null) => void;
   shareCode: string;
-  saveSharedFile: () => void;
+  cloudShareRecords: SharedFileRecord[];
+  saveSharedFile: () => void | Promise<void>;
   receiverCode: string;
   setReceiverCode: (value: string) => void;
   downloadByCode: () => void;
@@ -1276,7 +1457,7 @@ const SmartShare = ({
   <div className="space-y-5">
     <SectionTitle icon={Signal} title="الشير العالمي" subtitle="اختر وضع المشاركة، ثم توسّع البطاقة بسلاسة إلى مساحة عمل كاملة." />
     {!shareMode && (
-      <div className="grid min-h-[30rem] gap-5 lg:grid-cols-2">
+      <div className="grid min-h-0 grid-cols-2 gap-3 sm:gap-5 lg:min-h-[30rem]">
         <ShareChoiceCard icon={Cloud} title="المشاركة السحابية" subtitle="كود تنزيل آمن، مدة انتهاء، وسجل ملفات محفوظ للمستخدم." onClick={() => setShareMode("cloud")} />
         <ShareChoiceCard icon={Wifi} title="النقل القريب" subtitle="WebRTC وباركود واقتران يدوي للأجهزة القريبة دون إنترنت." onClick={() => setShareMode("nearby")} />
       </div>
@@ -1291,7 +1472,12 @@ const SmartShare = ({
           </div>
           <Cloud className="h-9 w-9 text-primary" />
         </div>
-        <div className="rounded-2xl border border-border/50 bg-background/40 p-4 text-sm text-muted-foreground">الملف المحدد: <span className="font-bold text-foreground">{sharedFile ? sharedFile.name : "لم يتم اختيار ملف"}</span></div>
+        <label onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); setSharedFile(event.dataTransfer.files?.[0] ?? null); }} className="flex min-h-36 cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-primary/60 bg-background/40 p-4 text-center transition-colors hover:bg-secondary/50">
+          <UploadCloud className="mb-2 h-8 w-8 text-primary" />
+          <span className="font-black">صندوق رفع الملفات</span>
+          <span className="mt-2 text-xs leading-6 text-muted-foreground">{sharedFile ? `${sharedFile.name} • ${formatFileSize(sharedFile.size)}` : "اسحب ملفاً هنا أو اضغط لاختياره ثم أنشئ كود المشاركة"}</span>
+          <input type="file" className="sr-only" onChange={(event) => setSharedFile(event.target.files?.[0] ?? null)} />
+        </label>
         <select value={expiry} onChange={(event) => setExpiry(event.target.value)} className="mt-4 h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring">
           <option>24 ساعة</option>
           <option>أسبوع واحد</option>
@@ -1306,6 +1492,7 @@ const SmartShare = ({
           <Input inputMode="numeric" maxLength={6} value={receiverCode} onChange={(event) => setReceiverCode(event.target.value)} placeholder="أدخل كود التنزيل" className="bg-background/70 text-center" dir="ltr" />
           <Button variant="glass" onClick={downloadByCode}><FileDown className="h-4 w-4" /> تنزيل</Button>
         </div>
+        {!!cloudShareRecords.length && <div className="mt-4 grid gap-2">{cloudShareRecords.slice(0, 3).map((record) => <div key={record.code} className="flex items-center justify-between gap-2 rounded-xl border border-border/50 bg-background/40 p-3 text-xs"><span className="truncate font-bold">{record.name}</span><span className="font-black text-primary" dir="ltr">{record.code}</span></div>)}</div>}
       </div>
     )}
     {shareMode === "nearby" && (
@@ -1372,6 +1559,11 @@ const PrivacyVault = ({
   patternEntry,
   setPatternEntry,
   hasPin,
+  hasVaultSecret,
+  vaultMethod,
+  vaultSetupStep,
+  chooseVaultMethod,
+  confirmVaultSecret,
   unlockVaultWithPin,
   unlockVaultWithBiometric,
   patternModalOpen,
@@ -1392,6 +1584,11 @@ const PrivacyVault = ({
   patternEntry: string;
   setPatternEntry: (value: string) => void;
   hasPin: boolean;
+  hasVaultSecret: boolean;
+  vaultMethod: VaultAuthMethod;
+  vaultSetupStep: VaultSetupStep;
+  chooseVaultMethod: (method: VaultAuthMethod) => void;
+  confirmVaultSecret: () => void | Promise<void>;
   unlockVaultWithPin: () => void;
   unlockVaultWithBiometric: () => void;
   patternModalOpen: boolean;
@@ -1400,7 +1597,7 @@ const PrivacyVault = ({
   setGhostMode: (value: boolean) => void;
   vaultFiles: VaultFile[];
   addVaultFiles: (files: FileList | null) => void | Promise<void>;
-  manageVaultFile: (file: VaultFile, action: "view" | "restore" | "delete") => void;
+  manageVaultFile: (file: VaultFile, action: "view" | "restore" | "delete") => void | Promise<void>;
   lockedApps: string[];
   toggleAppLock: (appName: string) => void;
   notify: (title: string, description: string) => void;
@@ -1410,21 +1607,22 @@ const PrivacyVault = ({
     {!vaultUnlocked ? (
       <div className="grid gap-5 lg:grid-cols-[1fr_0.85fr]">
         <div className="rounded-3xl border border-primary/40 bg-gradient-glass p-6 shadow-gold">
-          <div className="mb-5 flex h-20 w-20 items-center justify-center rounded-2xl bg-gradient-gold text-primary-foreground shadow-gold"><Lock className="h-10 w-10" /></div>
+          <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-gold text-primary-foreground shadow-gold sm:h-20 sm:w-20"><Lock className="h-8 w-8 sm:h-10 sm:w-10" /></div>
           <h3 className="text-3xl font-black gold-text">الخزنة مقفلة</h3>
-          <p className="mt-3 text-sm leading-7 text-muted-foreground">استخدم رمز PIN أو النمط أو المصادقة الحيوية لفتح المنطقة الآمنة. عند أول استخدام، سيصبح رمز PIN الذي تدخله هو رمزك الدائم.</p>
+          <p className="mt-3 text-sm leading-7 text-muted-foreground">{hasVaultSecret ? "اختر وسيلة القفل المحفوظة ثم افتح الخزنة." : "الخطوة الأولى: اختر وسيلة الحماية. الخطوة الثانية: أدخلها ثم أكدها لتفعيل قفل الملفات."}</p>
+          {!hasVaultSecret && vaultSetupStep === "method" && <div className="mt-5 grid grid-cols-3 gap-2"><Button variant="glass" className="h-auto flex-col py-3 text-xs" onClick={() => chooseVaultMethod("pattern")}><KeyRound className="h-4 w-4" /> نمط</Button><Button variant="gold" className="h-auto flex-col py-3 text-xs" onClick={() => chooseVaultMethod("pin")}><Lock className="h-4 w-4" /> PIN</Button><Button variant="glass" className="h-auto flex-col py-3 text-xs" onClick={() => chooseVaultMethod("biometric")}><Fingerprint className="h-4 w-4" /> حيوي</Button></div>}
           <div className="mt-5 grid gap-3 sm:grid-cols-2">
-            <Input inputMode="numeric" maxLength={8} value={pinEntry} onChange={(event) => setPinEntry(event.target.value)} placeholder={hasPin ? "أدخل PIN" : "أنشئ PIN جديد"} className="bg-background/70 text-center" dir="ltr" />
-            <Button variant="glass" type="button" onClick={() => setPatternModalOpen(true)} className="justify-between"><KeyRound className="h-4 w-4" /> {patternEntry ? `النمط: ${patternEntry}` : "إنشاء نمط"}</Button>
+            {(vaultMethod === "pin" || hasPin) && <Input inputMode="numeric" maxLength={8} value={pinEntry} onChange={(event) => setPinEntry(event.target.value.replace(/\D/g, ""))} placeholder={vaultSetupStep === "confirm" && !hasVaultSecret ? "أكّد PIN" : hasPin ? "أدخل PIN" : "أنشئ PIN جديد"} className="bg-background/70 text-center" dir="ltr" />}
+            {(vaultMethod === "pattern" || !hasPin) && <Button variant="glass" type="button" onClick={() => setPatternModalOpen(true)} className="justify-between"><KeyRound className="h-4 w-4" /> {patternEntry ? "تم رسم النمط" : vaultSetupStep === "confirm" ? "تأكيد النمط" : "رسم النمط"}</Button>}
           </div>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            <Button variant="gold" onClick={unlockVaultWithPin}><KeyRound className="h-4 w-4" /> فتح المخزن</Button>
+            <Button variant="gold" onClick={hasVaultSecret ? unlockVaultWithPin : confirmVaultSecret}><KeyRound className="h-4 w-4" /> {hasVaultSecret ? "فتح المخزن" : vaultSetupStep === "confirm" ? "تأكيد" : "متابعة"}</Button>
             <Button variant="glass" onClick={unlockVaultWithBiometric}><Fingerprint className="h-4 w-4" /> تحقق حيوي</Button>
           </div>
         </div>
           <div className="rounded-3xl border border-border/50 bg-secondary/30 p-4 sm:p-5">
             <div className="grid grid-cols-3 gap-2 sm:gap-3">
-              {["١", "٢", "٣", "٤", "٥", "٦", "٧", "٨", "٩"].map((node) => <div key={node} className="grid aspect-square place-items-center rounded-2xl border border-border/50 bg-background/45 text-lg font-black text-primary sm:text-xl">{node}</div>)}
+              {Array.from({ length: 9 }, (_, index) => <div key={index} className="grid aspect-square place-items-center rounded-full border border-primary/40 bg-primary/10"><span className="h-3 w-3 rounded-full bg-primary shadow-gold" /></div>)}
           </div>
         </div>
       </div>
@@ -1564,19 +1762,19 @@ const LabeledInput = ({ label, value, onChange, suffix }: { label: string; value
 );
 
 const LargeAction = ({ icon: Icon, label, onClick }: { icon: typeof Radio; label: string; onClick: () => void }) => (
-  <button onClick={onClick} className="min-h-28 rounded-2xl border border-border/50 bg-background/40 p-4 text-right transition-all hover:-translate-y-1 hover:border-primary/60 hover:bg-primary/10">
-    <Icon className="mb-3 h-7 w-7 text-primary" />
-    <span className="font-black">{label}</span>
+  <button onClick={onClick} className="min-h-20 rounded-2xl border border-border/50 bg-background/40 p-3 text-right transition-all hover:-translate-y-1 hover:border-primary/60 hover:bg-primary/10 sm:min-h-28 sm:p-4">
+    <Icon className="mb-2 h-5 w-5 text-primary sm:mb-3 sm:h-7 sm:w-7" />
+    <span className="text-sm font-black sm:text-base">{label}</span>
   </button>
 );
 
 const ShareChoiceCard = ({ icon: Icon, title, subtitle, onClick }: { icon: typeof Cloud; title: string; subtitle: string; onClick: () => void }) => (
-  <button onClick={onClick} className="group relative overflow-hidden rounded-3xl border border-border/50 bg-gradient-glass p-6 text-right shadow-glass transition-all duration-300 hover:-translate-y-1 hover:border-primary/70 hover:shadow-gold animate-scale-in">
-    <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-gold text-primary-foreground shadow-gold transition-transform duration-300 group-hover:scale-110"><Icon className="h-8 w-8" /></div>
-    <div className="mt-24">
-      <h3 className="text-3xl font-black gold-text">{title}</h3>
-      <p className="mt-3 max-w-md text-sm font-semibold leading-7 text-muted-foreground">{subtitle}</p>
-      <span className="mt-6 inline-flex items-center gap-2 rounded-full border border-primary/50 bg-primary/10 px-4 py-2 text-sm font-black text-primary"><Maximize2 className="h-4 w-4" /> فتح مساحة العمل</span>
+  <button onClick={onClick} className="group relative overflow-hidden rounded-2xl border border-border/50 bg-gradient-glass p-3 text-right shadow-glass transition-all duration-300 hover:-translate-y-1 hover:border-primary/70 hover:shadow-gold sm:rounded-3xl sm:p-6 animate-scale-in">
+    <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-gold text-primary-foreground shadow-gold transition-transform duration-300 group-hover:scale-110 sm:h-16 sm:w-16 sm:rounded-2xl"><Icon className="h-5 w-5 sm:h-8 sm:w-8" /></div>
+    <div className="mt-5 sm:mt-24">
+      <h3 className="text-base font-black gold-text sm:text-3xl">{title}</h3>
+      <p className="mt-2 line-clamp-3 max-w-md text-xs font-semibold leading-6 text-muted-foreground sm:mt-3 sm:text-sm sm:leading-7">{subtitle}</p>
+      <span className="mt-3 inline-flex items-center gap-1 rounded-full border border-primary/50 bg-primary/10 px-2.5 py-1.5 text-[0.68rem] font-black text-primary sm:mt-6 sm:gap-2 sm:px-4 sm:py-2 sm:text-sm"><Maximize2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" /> فتح</span>
     </div>
   </button>
 );
