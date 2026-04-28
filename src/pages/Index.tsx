@@ -1556,6 +1556,11 @@ const PrivacyVault = ({
   patternEntry,
   setPatternEntry,
   hasPin,
+  hasVaultSecret,
+  vaultMethod,
+  vaultSetupStep,
+  chooseVaultMethod,
+  confirmVaultSecret,
   unlockVaultWithPin,
   unlockVaultWithBiometric,
   patternModalOpen,
@@ -1576,6 +1581,11 @@ const PrivacyVault = ({
   patternEntry: string;
   setPatternEntry: (value: string) => void;
   hasPin: boolean;
+  hasVaultSecret: boolean;
+  vaultMethod: VaultAuthMethod;
+  vaultSetupStep: VaultSetupStep;
+  chooseVaultMethod: (method: VaultAuthMethod) => void;
+  confirmVaultSecret: () => void | Promise<void>;
   unlockVaultWithPin: () => void;
   unlockVaultWithBiometric: () => void;
   patternModalOpen: boolean;
@@ -1584,7 +1594,7 @@ const PrivacyVault = ({
   setGhostMode: (value: boolean) => void;
   vaultFiles: VaultFile[];
   addVaultFiles: (files: FileList | null) => void | Promise<void>;
-  manageVaultFile: (file: VaultFile, action: "view" | "restore" | "delete") => void;
+  manageVaultFile: (file: VaultFile, action: "view" | "restore" | "delete") => void | Promise<void>;
   lockedApps: string[];
   toggleAppLock: (appName: string) => void;
   notify: (title: string, description: string) => void;
