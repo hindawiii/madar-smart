@@ -805,18 +805,18 @@ const Header = ({
   signOut: () => void;
   openGuide: () => void;
 }) => (
-  <header className="glass-panel sticky top-4 z-30 flex items-center justify-between rounded-2xl px-4 py-3">
-    <div className="flex items-center gap-3">
-      <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-gold text-primary-foreground shadow-gold">
-        <Radar className="h-6 w-6" />
+  <header className="glass-panel sticky top-3 z-30 flex items-center justify-between gap-2 rounded-2xl px-3 py-2.5 sm:top-4 sm:px-4 sm:py-3">
+    <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-gold text-primary-foreground shadow-gold sm:h-11 sm:w-11">
+        <Radar className="h-5 w-5 sm:h-6 sm:w-6" />
       </div>
-      <div>
+      <div className="min-w-0">
         <p className="text-xs text-muted-foreground">تطبيق أدوات ذكية</p>
-        <h1 className="text-2xl font-black leading-none gold-text">مدار</h1>
+        <h1 className="text-xl font-black leading-none gold-text sm:text-2xl">مدار</h1>
       </div>
     </div>
 
-    <div className="flex items-center gap-2">
+    <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
       <div className="hidden items-center gap-2 rounded-full border border-border/60 bg-secondary/50 px-4 py-2 text-sm font-bold sm:flex">
         <Sparkles className="h-4 w-4 text-primary" />
         {credits}
@@ -879,11 +879,11 @@ const Header = ({
 const AppShell = ({ children }: { children: React.ReactNode }) => <section className="glass-panel min-h-[calc(100vh-10rem)] rounded-3xl p-3 sm:min-h-[620px] sm:p-5">{children}</section>;
 
 const HomeSection = ({ credits, rewardAd, user, signInWithGoogle, shareApp }: { credits: string; rewardAd: () => void; user: AuthUser | null; signInWithGoogle: () => void; shareApp: (platformName: string) => void }) => (
-  <section className="flex min-h-[620px] flex-col justify-between rounded-3xl border border-border/50 bg-gradient-glass p-5 shadow-glass sm:p-8">
+  <section className="flex min-h-[calc(100vh-10rem)] flex-col justify-between rounded-3xl border border-border/50 bg-gradient-glass p-4 shadow-glass sm:min-h-[620px] sm:p-8">
     <div className="mx-auto w-full max-w-2xl space-y-4">
       <div className="rounded-3xl border border-primary/40 bg-primary/10 p-5 text-center shadow-gold">
         <BadgeCheck className="mx-auto mb-3 h-9 w-9 text-primary" />
-        <p className="text-sm font-bold leading-7 text-foreground">قم بربط حسابك الآن لضمان حفظ أرصدتك، نغماتك المخصصة، وتفضيلاتك السحابية، واستمتع بمساحة تخزين إضافية مجانية.</p>
+        <p className="text-sm font-bold leading-7 text-foreground">ربط الحساب مهم جداً لحفظ إعدادات مخزن الخصوصية، ملفات المعرض السري، الأرصدة، والنغمات المخصصة بأمان.</p>
         {!user && <Button variant="gold" className="mt-4 w-full" onClick={signInWithGoogle}><Chrome className="h-4 w-4" /> ربط الحساب عبر Google الآن</Button>}
       </div>
       <div className="rounded-3xl border border-border/50 bg-secondary/30 p-6 text-center shadow-gold">
@@ -900,14 +900,14 @@ const HomeSection = ({ credits, rewardAd, user, signInWithGoogle, shareApp }: { 
         <span className="font-black">مشاركة التطبيق</span>
         <Share2 className="h-5 w-5 text-primary" />
       </div>
-      <div className="grid grid-cols-4 gap-3">
+      <div className="grid grid-cols-4 gap-2 sm:gap-3">
         {[
           { label: "WhatsApp", icon: MessageCircle },
           { label: "Facebook", icon: Facebook },
           { label: "Instagram", icon: Instagram },
           { label: "Twitter", icon: Twitter },
         ].map((item) => (
-          <Button key={item.label} variant="glass" size="icon" aria-label={`مشاركة عبر ${item.label}`} onClick={() => shareApp(item.label)}>
+          <Button key={item.label} variant="glass" size="icon" className="h-11 w-full" aria-label={`مشاركة عبر ${item.label}`} onClick={() => shareApp(item.label)}>
             <item.icon className="h-5 w-5" />
           </Button>
         ))}
