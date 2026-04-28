@@ -54,6 +54,7 @@ export type Database = {
           id: string
           metadata: Json
           retrieval_code: string
+          storage_path: string | null
           updated_at: string
           user_id: string
         }
@@ -66,6 +67,7 @@ export type Database = {
           id?: string
           metadata?: Json
           retrieval_code: string
+          storage_path?: string | null
           updated_at?: string
           user_id: string
         }
@@ -78,6 +80,7 @@ export type Database = {
           id?: string
           metadata?: Json
           retrieval_code?: string
+          storage_path?: string | null
           updated_at?: string
           user_id?: string
         }
@@ -119,6 +122,7 @@ export type Database = {
           hidden: boolean
           id: string
           metadata: Json
+          storage_path: string | null
           thumbnail: string | null
           updated_at: string
           user_id: string
@@ -131,6 +135,7 @@ export type Database = {
           hidden?: boolean
           id?: string
           metadata?: Json
+          storage_path?: string | null
           thumbnail?: string | null
           updated_at?: string
           user_id: string
@@ -143,6 +148,7 @@ export type Database = {
           hidden?: boolean
           id?: string
           metadata?: Json
+          storage_path?: string | null
           thumbnail?: string | null
           updated_at?: string
           user_id?: string
