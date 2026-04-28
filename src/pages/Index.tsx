@@ -1407,6 +1407,7 @@ const SmartShare = ({
   sharedFile,
   setSharedFile,
   shareCode,
+  cloudShareRecords,
   saveSharedFile,
   receiverCode,
   setReceiverCode,
@@ -1431,7 +1432,8 @@ const SmartShare = ({
   sharedFile: File | null;
   setSharedFile: (file: File | null) => void;
   shareCode: string;
-  saveSharedFile: () => void;
+  cloudShareRecords: SharedFileRecord[];
+  saveSharedFile: () => void | Promise<void>;
   receiverCode: string;
   setReceiverCode: (value: string) => void;
   downloadByCode: () => void;
@@ -1452,7 +1454,7 @@ const SmartShare = ({
   <div className="space-y-5">
     <SectionTitle icon={Signal} title="الشير العالمي" subtitle="اختر وضع المشاركة، ثم توسّع البطاقة بسلاسة إلى مساحة عمل كاملة." />
     {!shareMode && (
-      <div className="grid min-h-[30rem] gap-5 lg:grid-cols-2">
+      <div className="grid min-h-0 grid-cols-2 gap-3 sm:gap-5 lg:min-h-[30rem]">
         <ShareChoiceCard icon={Cloud} title="المشاركة السحابية" subtitle="كود تنزيل آمن، مدة انتهاء، وسجل ملفات محفوظ للمستخدم." onClick={() => setShareMode("cloud")} />
         <ShareChoiceCard icon={Wifi} title="النقل القريب" subtitle="WebRTC وباركود واقتران يدوي للأجهزة القريبة دون إنترنت." onClick={() => setShareMode("nearby")} />
       </div>
@@ -1467,7 +1469,12 @@ const SmartShare = ({
           </div>
           <Cloud className="h-9 w-9 text-primary" />
         </div>
-        <div className="rounded-2xl border border-border/50 bg-background/40 p-4 text-sm text-muted-foreground">الملف المحدد: <span className="font-bold text-foreground">{sharedFile ? sharedFile.name : "لم يتم اختيار ملف"}</span></div>
+        <label onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); setSharedFile(event.dataTransfer.files?.[0] ?? null); }} className="flex min-h-36 cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-primary/60 bg-background/40 p-4 text-center transition-colors hover:bg-secondary/50">
+          <UploadCloud className="mb-2 h-8 w-8 text-primary" />
+          <span className="font-black">صندوق رفع الملفات</span>
+          <span className="mt-2 text-xs leading-6 text-muted-foreground">{sharedFile ? `${sharedFile.name} • ${formatFileSize(sharedFile.size)}` : "اسحب ملفاً هنا أو اضغط لاختياره ثم أنشئ كود المشاركة"}</span>
+          <input type="file" className="sr-only" onChange={(event) => setSharedFile(event.target.files?.[0] ?? null)} />
+        </label>
         <select value={expiry} onChange={(event) => setExpiry(event.target.value)} className="mt-4 h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring">
           <option>24 ساعة</option>
           <option>أسبوع واحد</option>
@@ -1482,6 +1489,7 @@ const SmartShare = ({
           <Input inputMode="numeric" maxLength={6} value={receiverCode} onChange={(event) => setReceiverCode(event.target.value)} placeholder="أدخل كود التنزيل" className="bg-background/70 text-center" dir="ltr" />
           <Button variant="glass" onClick={downloadByCode}><FileDown className="h-4 w-4" /> تنزيل</Button>
         </div>
+        {!!cloudShareRecords.length && <div className="mt-4 grid gap-2">{cloudShareRecords.slice(0, 3).map((record) => <div key={record.code} className="flex items-center justify-between gap-2 rounded-xl border border-border/50 bg-background/40 p-3 text-xs"><span className="truncate font-bold">{record.name}</span><span className="font-black text-primary" dir="ltr">{record.code}</span></div>)}</div>}
       </div>
     )}
     {shareMode === "nearby" && (
