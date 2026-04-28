@@ -211,6 +211,7 @@ const Index = () => {
   const [shareMode, setShareMode] = useState<ShareMode>(null);
   const [vaultUnlocked, setVaultUnlocked] = useState(false);
   const [vaultPin, setVaultPin] = useState(() => window.localStorage.getItem("madar_vault_pin") || "");
+  const [vaultPattern, setVaultPattern] = useState(() => window.localStorage.getItem("madar_vault_pattern") || "");
   const [pinEntry, setPinEntry] = useState("");
   const [patternEntry, setPatternEntry] = useState("");
   const [patternModalOpen, setPatternModalOpen] = useState(false);
@@ -591,7 +592,14 @@ const Index = () => {
       notify("تم إنشاء رمز القفل", "أصبح مخزن الخصوصية جاهزاً لحفظ الملفات المحمية.");
       return;
     }
-    if (pinEntry === vaultPin || patternEntry === "١-٢-٣-٦") {
+    if (!vaultPattern && patternEntry.split("-").filter(Boolean).length >= 4) {
+      window.localStorage.setItem("madar_vault_pattern", patternEntry);
+      setVaultPattern(patternEntry);
+      setVaultUnlocked(true);
+      notify("تم إنشاء نمط القفل", "حُفظ النمط داخل جهازك ويمكن استخدامه لفتح مخزن الخصوصية.");
+      return;
+    }
+    if (pinEntry === vaultPin || (Boolean(vaultPattern) && patternEntry === vaultPattern)) {
       setVaultUnlocked(true);
       notify("تم فتح المخزن", "يمكنك الآن إدارة الملفات المقفلة ووضع الإخفاء بأمان.");
       return;
