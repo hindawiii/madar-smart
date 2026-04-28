@@ -63,6 +63,7 @@ import {
   Zap,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import {
   Drawer,
   DrawerClose,
@@ -87,7 +88,7 @@ type Platform = "android" | "ios";
 type MediaFormat = { kind: "فيديو" | "صوت"; quality: string; sizeMb: number; extension: "mp4" | "mp3"; icon: typeof FileVideo };
 type SharedFileRecord = { code: string; name: string; size: number; expiry: string; createdAt: number; url: string };
 type ConnectedDevice = { id: string; name: string; status: string };
-type VaultFile = { id: string; name: string; size: number; type: string; hidden: boolean; encryptedAt: number };
+type VaultFile = { id: string; name: string; size: number; type: string; hidden: boolean; encryptedAt: number; thumbnail?: string };
 type ShareMode = "cloud" | "nearby" | null;
 
 const CREDIT_COST: Record<PaidAction, number> = { call: 1, download: 1 };
@@ -120,6 +121,13 @@ const formatFileSize = (bytes: number) => {
   if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} ك.ب`;
   return `${(bytes / 1024 / 1024).toFixed(1)} م.ب`;
 };
+
+const readFileAsDataUrl = (file: File) => new Promise<string>((resolve) => {
+  const reader = new FileReader();
+  reader.onload = () => resolve(String(reader.result || ""));
+  reader.onerror = () => resolve("");
+  reader.readAsDataURL(file);
+});
 
 const createCode = () => String(Math.floor(100000 + Math.random() * 900000));
 
@@ -203,8 +211,10 @@ const Index = () => {
   const [shareMode, setShareMode] = useState<ShareMode>(null);
   const [vaultUnlocked, setVaultUnlocked] = useState(false);
   const [vaultPin, setVaultPin] = useState(() => window.localStorage.getItem("madar_vault_pin") || "");
+  const [vaultPattern, setVaultPattern] = useState(() => window.localStorage.getItem("madar_vault_pattern") || "");
   const [pinEntry, setPinEntry] = useState("");
   const [patternEntry, setPatternEntry] = useState("");
+  const [patternModalOpen, setPatternModalOpen] = useState(false);
   const [ghostMode, setGhostMode] = useState(() => window.localStorage.getItem("madar_ghost_mode") === "true");
   const [vaultFiles, setVaultFiles] = useState<VaultFile[]>(() => JSON.parse(window.localStorage.getItem(VAULT_STORAGE_KEY) || "[]") as VaultFile[]);
   const [lockedApps, setLockedApps] = useState<string[]>(() => JSON.parse(window.localStorage.getItem("madar_locked_apps") || "[]") as string[]);
@@ -317,9 +327,21 @@ const Index = () => {
     const fallbackName = currentUser.user_metadata?.full_name || currentUser.user_metadata?.name || currentUser.email || "مستخدم مدار";
     const { data: profile } = await (supabase.from("profiles") as any).select("display_name, custom_tones").eq("user_id", currentUser.id).maybeSingle();
     const { data: cloudCredits } = await supabase.from("user_credits").select("credits").eq("user_id", currentUser.id).maybeSingle();
+    const { data: cloudVaultFiles } = await (supabase.from("vault_files") as any).select("id, file_name, file_size, file_type, thumbnail, hidden, created_at").eq("user_id", currentUser.id).order("created_at", { ascending: false });
     setProfileName(profile?.display_name || fallbackName);
     if (Array.isArray(profile?.custom_tones)) setCustomTones(profile.custom_tones);
     if (typeof cloudCredits?.credits === "number") setCredits(cloudCredits.credits);
+    if (Array.isArray(cloudVaultFiles)) {
+      setVaultFiles(cloudVaultFiles.map((file: any) => ({
+        id: file.id,
+        name: file.file_name,
+        size: Number(file.file_size) || 0,
+        type: file.file_type || "ملف",
+        hidden: Boolean(file.hidden),
+        encryptedAt: new Date(file.created_at).getTime() || Date.now(),
+        thumbnail: file.thumbnail || undefined,
+      })));
+    }
   };
 
   const signInWithGoogle = async () => {
@@ -570,7 +592,14 @@ const Index = () => {
       notify("تم إنشاء رمز القفل", "أصبح مخزن الخصوصية جاهزاً لحفظ الملفات المحمية.");
       return;
     }
-    if (pinEntry === vaultPin || patternEntry === "١-٢-٣-٦") {
+    if (!vaultPattern && patternEntry.split("-").filter(Boolean).length >= 4) {
+      window.localStorage.setItem("madar_vault_pattern", patternEntry);
+      setVaultPattern(patternEntry);
+      setVaultUnlocked(true);
+      notify("تم إنشاء نمط القفل", "حُفظ النمط داخل جهازك ويمكن استخدامه لفتح مخزن الخصوصية.");
+      return;
+    }
+    if (pinEntry === vaultPin || (Boolean(vaultPattern) && patternEntry === vaultPattern)) {
       setVaultUnlocked(true);
       notify("تم فتح المخزن", "يمكنك الآن إدارة الملفات المقفلة ووضع الإخفاء بأمان.");
       return;
@@ -587,18 +616,42 @@ const Index = () => {
     notify("تم قبول التحقق الحيوي", "تم فتح مخزن الخصوصية عبر طبقة WebAuthn المتاحة في الجهاز.");
   };
 
-  const addVaultFiles = (files: FileList | null) => {
+  const addVaultFiles = async (files: FileList | null) => {
     if (!files?.length) return;
-    const nextFiles = Array.from(files).map((file) => ({
-      id: crypto.randomUUID(),
-      name: file.name,
-      size: file.size,
-      type: file.type || "ملف",
-      hidden: ghostMode,
-      encryptedAt: Date.now(),
+    const nextFiles = await Promise.all(Array.from(files).map(async (file) => {
+      const thumbnail = file.type.startsWith("image/") ? await readFileAsDataUrl(file) : undefined;
+      return { id: crypto.randomUUID(), name: file.name, size: file.size, type: file.type || "ملف", hidden: ghostMode, encryptedAt: Date.now(), thumbnail };
     }));
     setVaultFiles((current) => [...nextFiles, ...current].slice(0, 20));
+    if (user) {
+      void (supabase.from("vault_files") as any).insert(nextFiles.map((file) => ({
+        id: file.id,
+        user_id: user.id,
+        file_name: file.name,
+        file_size: file.size,
+        file_type: file.type,
+        thumbnail: file.thumbnail ?? null,
+        hidden: file.hidden,
+        metadata: { encrypted_at: file.encryptedAt, ghost_mode: ghostMode },
+      })));
+    }
     notify("تم نقل الملفات إلى المخزن", ghostMode ? "حُفظت الملفات داخل مساحة مخفية ومشفرة داخل التطبيق." : "حُفظت الملفات داخل مخزن الخصوصية المشفر.");
+  };
+
+  const manageVaultFile = (file: VaultFile, action: "view" | "restore" | "delete") => {
+    if (action === "view") {
+      notify("معاينة المحتوى", `${file.name} جاهز للمعاينة داخل المعرض السري.`);
+      return;
+    }
+    if (action === "restore") {
+      setVaultFiles((files) => files.map((item) => item.id === file.id ? { ...item, hidden: false } : item));
+      if (user) void (supabase.from("vault_files") as any).update({ hidden: false }).eq("id", file.id).eq("user_id", user.id);
+      notify("تم إلغاء القفل", "أعيد الملف إلى حالة ظاهرة داخل المخزن ويمكن استعادته للمعرض.");
+      return;
+    }
+    setVaultFiles((files) => files.filter((item) => item.id !== file.id));
+    if (user) void (supabase.from("vault_files") as any).delete().eq("id", file.id).eq("user_id", user.id);
+    notify("حذف نهائي", "تم حذف الملف من مخزن الخصوصية نهائياً.");
   };
 
   const toggleAppLock = (appName: string) => {
@@ -614,9 +667,9 @@ const Index = () => {
   };
 
   return (
-    <main className="min-h-screen overflow-hidden bg-orbit font-cairo text-foreground">
+    <main className="min-h-screen overflow-x-hidden bg-orbit font-cairo text-foreground">
       <div className="pointer-events-none fixed inset-0 orbit-grid opacity-60" />
-      <div className="relative mx-auto flex min-h-screen w-full max-w-7xl flex-col px-4 pb-28 pt-4 sm:px-6 lg:px-8">
+      <div className="relative mx-auto flex min-h-screen w-full max-w-7xl flex-col px-3 pb-28 pt-3 sm:px-6 sm:pt-4 lg:px-8">
         <Header credits={creditLabel} user={user} profileName={profileName} darkMode={darkMode} setDarkMode={setDarkMode} cleanCache={cleanCache} notify={notify} signInWithGoogle={signInWithGoogle} signOut={signOut} openGuide={() => { setGuideStep(0); setGuideOpen(true); }} />
 
         <section className="flex-1 py-6">
@@ -707,10 +760,13 @@ const Index = () => {
                 hasPin={Boolean(vaultPin)}
                 unlockVaultWithPin={unlockVaultWithPin}
                 unlockVaultWithBiometric={unlockVaultWithBiometric}
+                patternModalOpen={patternModalOpen}
+                setPatternModalOpen={setPatternModalOpen}
                 ghostMode={ghostMode}
                 setGhostMode={setGhostMode}
                 vaultFiles={vaultFiles}
                 addVaultFiles={addVaultFiles}
+                manageVaultFile={manageVaultFile}
                 lockedApps={lockedApps}
                 toggleAppLock={toggleAppLock}
                 notify={notify}
@@ -749,18 +805,18 @@ const Header = ({
   signOut: () => void;
   openGuide: () => void;
 }) => (
-  <header className="glass-panel sticky top-4 z-30 flex items-center justify-between rounded-2xl px-4 py-3">
-    <div className="flex items-center gap-3">
-      <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-gold text-primary-foreground shadow-gold">
-        <Radar className="h-6 w-6" />
+  <header className="glass-panel sticky top-3 z-30 flex items-center justify-between gap-2 rounded-2xl px-3 py-2.5 sm:top-4 sm:px-4 sm:py-3">
+    <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-gold text-primary-foreground shadow-gold sm:h-11 sm:w-11">
+        <Radar className="h-5 w-5 sm:h-6 sm:w-6" />
       </div>
-      <div>
+      <div className="min-w-0">
         <p className="text-xs text-muted-foreground">تطبيق أدوات ذكية</p>
-        <h1 className="text-2xl font-black leading-none gold-text">مدار</h1>
+        <h1 className="text-xl font-black leading-none gold-text sm:text-2xl">مدار</h1>
       </div>
     </div>
 
-    <div className="flex items-center gap-2">
+    <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
       <div className="hidden items-center gap-2 rounded-full border border-border/60 bg-secondary/50 px-4 py-2 text-sm font-bold sm:flex">
         <Sparkles className="h-4 w-4 text-primary" />
         {credits}
@@ -820,14 +876,14 @@ const Header = ({
   </header>
 );
 
-const AppShell = ({ children }: { children: React.ReactNode }) => <section className="glass-panel min-h-[620px] rounded-3xl p-3 sm:p-5">{children}</section>;
+const AppShell = ({ children }: { children: React.ReactNode }) => <section className="glass-panel min-h-[calc(100vh-10rem)] rounded-3xl p-3 sm:min-h-[620px] sm:p-5">{children}</section>;
 
 const HomeSection = ({ credits, rewardAd, user, signInWithGoogle, shareApp }: { credits: string; rewardAd: () => void; user: AuthUser | null; signInWithGoogle: () => void; shareApp: (platformName: string) => void }) => (
-  <section className="flex min-h-[620px] flex-col justify-between rounded-3xl border border-border/50 bg-gradient-glass p-5 shadow-glass sm:p-8">
+  <section className="flex min-h-[calc(100vh-10rem)] flex-col justify-between rounded-3xl border border-border/50 bg-gradient-glass p-4 shadow-glass sm:min-h-[620px] sm:p-8">
     <div className="mx-auto w-full max-w-2xl space-y-4">
       <div className="rounded-3xl border border-primary/40 bg-primary/10 p-5 text-center shadow-gold">
         <BadgeCheck className="mx-auto mb-3 h-9 w-9 text-primary" />
-        <p className="text-sm font-bold leading-7 text-foreground">قم بربط حسابك الآن لضمان حفظ أرصدتك، نغماتك المخصصة، وتفضيلاتك السحابية، واستمتع بمساحة تخزين إضافية مجانية.</p>
+        <p className="text-sm font-bold leading-7 text-foreground">ربط الحساب مهم جداً لحفظ إعدادات مخزن الخصوصية، ملفات المعرض السري، الأرصدة، والنغمات المخصصة بأمان.</p>
         {!user && <Button variant="gold" className="mt-4 w-full" onClick={signInWithGoogle}><Chrome className="h-4 w-4" /> ربط الحساب عبر Google الآن</Button>}
       </div>
       <div className="rounded-3xl border border-border/50 bg-secondary/30 p-6 text-center shadow-gold">
@@ -844,14 +900,14 @@ const HomeSection = ({ credits, rewardAd, user, signInWithGoogle, shareApp }: { 
         <span className="font-black">مشاركة التطبيق</span>
         <Share2 className="h-5 w-5 text-primary" />
       </div>
-      <div className="grid grid-cols-4 gap-3">
+      <div className="grid grid-cols-4 gap-2 sm:gap-3">
         {[
           { label: "WhatsApp", icon: MessageCircle },
           { label: "Facebook", icon: Facebook },
           { label: "Instagram", icon: Instagram },
           { label: "Twitter", icon: Twitter },
         ].map((item) => (
-          <Button key={item.label} variant="glass" size="icon" aria-label={`مشاركة عبر ${item.label}`} onClick={() => shareApp(item.label)}>
+          <Button key={item.label} variant="glass" size="icon" className="h-11 w-full" aria-label={`مشاركة عبر ${item.label}`} onClick={() => shareApp(item.label)}>
             <item.icon className="h-5 w-5" />
           </Button>
         ))}
@@ -861,7 +917,7 @@ const HomeSection = ({ credits, rewardAd, user, signInWithGoogle, shareApp }: { 
 );
 
 const FloatingNavigation = ({ activeSection, setActiveSection, activeIndex }: { activeSection: Section; setActiveSection: (section: Section) => void; activeIndex: number }) => (
-  <nav className="fixed inset-x-0 bottom-4 z-40 mx-auto w-[min(96vw,46rem)] rounded-full border border-border/70 bg-glass/75 p-2 shadow-glass backdrop-blur-2xl">
+  <nav className="fixed inset-x-0 bottom-3 z-40 mx-auto w-[min(96vw,46rem)] rounded-3xl border border-border/70 bg-glass/75 p-1.5 shadow-glass backdrop-blur-2xl sm:bottom-4 sm:rounded-full sm:p-2">
     <div className="relative grid grid-cols-5 gap-1">
       <span className="absolute bottom-0 top-0 w-1/5 rounded-full bg-primary/15 transition-transform duration-300" style={{ transform: `translateX(${-activeIndex * 100}%)`, right: 0 }} />
       {navItems.map((item) => {
@@ -871,10 +927,10 @@ const FloatingNavigation = ({ activeSection, setActiveSection, activeIndex }: { 
           <button
             key={item.id}
             onClick={() => setActiveSection(item.id)}
-            className={`relative z-10 flex min-h-14 flex-col items-center justify-center gap-1 rounded-full text-xs font-bold transition-all duration-300 ${active ? "-translate-y-1 text-primary drop-shadow" : "text-muted-foreground"}`}
+            className={`relative z-10 flex min-h-12 flex-col items-center justify-center gap-0.5 rounded-2xl px-1 text-[0.63rem] font-bold leading-tight transition-all duration-300 sm:min-h-14 sm:gap-1 sm:rounded-full sm:text-xs ${active ? "-translate-y-0.5 text-primary drop-shadow sm:-translate-y-1" : "text-muted-foreground"}`}
           >
-            <Icon className="h-5 w-5 transition-all" />
-            <span>{item.label}</span>
+            <Icon className="h-4 w-4 transition-all sm:h-5 sm:w-5" />
+            <span className="max-w-full truncate">{item.label}</span>
           </button>
         );
       })}
@@ -1318,10 +1374,13 @@ const PrivacyVault = ({
   hasPin,
   unlockVaultWithPin,
   unlockVaultWithBiometric,
+  patternModalOpen,
+  setPatternModalOpen,
   ghostMode,
   setGhostMode,
   vaultFiles,
   addVaultFiles,
+  manageVaultFile,
   lockedApps,
   toggleAppLock,
   notify,
@@ -1335,10 +1394,13 @@ const PrivacyVault = ({
   hasPin: boolean;
   unlockVaultWithPin: () => void;
   unlockVaultWithBiometric: () => void;
+  patternModalOpen: boolean;
+  setPatternModalOpen: (value: boolean) => void;
   ghostMode: boolean;
   setGhostMode: (value: boolean) => void;
   vaultFiles: VaultFile[];
-  addVaultFiles: (files: FileList | null) => void;
+  addVaultFiles: (files: FileList | null) => void | Promise<void>;
+  manageVaultFile: (file: VaultFile, action: "view" | "restore" | "delete") => void;
   lockedApps: string[];
   toggleAppLock: (appName: string) => void;
   notify: (title: string, description: string) => void;
@@ -1353,16 +1415,16 @@ const PrivacyVault = ({
           <p className="mt-3 text-sm leading-7 text-muted-foreground">استخدم رمز PIN أو النمط أو المصادقة الحيوية لفتح المنطقة الآمنة. عند أول استخدام، سيصبح رمز PIN الذي تدخله هو رمزك الدائم.</p>
           <div className="mt-5 grid gap-3 sm:grid-cols-2">
             <Input inputMode="numeric" maxLength={8} value={pinEntry} onChange={(event) => setPinEntry(event.target.value)} placeholder={hasPin ? "أدخل PIN" : "أنشئ PIN جديد"} className="bg-background/70 text-center" dir="ltr" />
-            <Input value={patternEntry} onChange={(event) => setPatternEntry(event.target.value)} placeholder="النمط: ١-٢-٣-٦" className="bg-background/70 text-center" />
+            <Button variant="glass" type="button" onClick={() => setPatternModalOpen(true)} className="justify-between"><KeyRound className="h-4 w-4" /> {patternEntry ? `النمط: ${patternEntry}` : "إنشاء نمط"}</Button>
           </div>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             <Button variant="gold" onClick={unlockVaultWithPin}><KeyRound className="h-4 w-4" /> فتح المخزن</Button>
             <Button variant="glass" onClick={unlockVaultWithBiometric}><Fingerprint className="h-4 w-4" /> تحقق حيوي</Button>
           </div>
         </div>
-        <div className="rounded-3xl border border-border/50 bg-secondary/30 p-5">
-          <div className="grid grid-cols-3 gap-2">
-            {["١", "٢", "٣", "٤", "٥", "٦", "٧", "٨", "٩"].map((node) => <div key={node} className="grid aspect-square place-items-center rounded-2xl border border-border/50 bg-background/45 text-xl font-black text-primary">{node}</div>)}
+          <div className="rounded-3xl border border-border/50 bg-secondary/30 p-4 sm:p-5">
+            <div className="grid grid-cols-3 gap-2 sm:gap-3">
+              {["١", "٢", "٣", "٤", "٥", "٦", "٧", "٨", "٩"].map((node) => <div key={node} className="grid aspect-square place-items-center rounded-2xl border border-border/50 bg-background/45 text-lg font-black text-primary sm:text-xl">{node}</div>)}
           </div>
         </div>
       </div>
@@ -1386,12 +1448,25 @@ const PrivacyVault = ({
             </div>
           </div>
           <div className="rounded-3xl border border-border/50 bg-background/40 p-4">
-            <h4 className="mb-3 font-black">الملفات المحمية</h4>
-            <div className="space-y-2">
+            <h4 className="mb-3 font-black">المعرض السري</h4>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
               {vaultFiles.length ? vaultFiles.map((file) => (
-                <div key={file.id} className="flex items-center justify-between gap-3 rounded-2xl bg-secondary/40 p-3">
-                  <div><p className="font-bold">{file.name}</p><p className="text-xs text-muted-foreground">{formatFileSize(file.size)} • {file.hidden ? "مخفي داخل التطبيق" : "ظاهر داخل المخزن"}</p></div>
-                  <Lock className="h-5 w-5 text-primary" />
+                <div key={file.id} className="overflow-hidden rounded-2xl border border-border/50 bg-secondary/40">
+                  <div className="grid aspect-square place-items-center bg-background/45">
+                    {file.thumbnail ? <img src={file.thumbnail} alt={file.name} className="h-full w-full object-cover" /> : file.type.startsWith("video/") ? <FileVideo className="h-8 w-8 text-primary" /> : <FileArchive className="h-8 w-8 text-primary" />}
+                  </div>
+                  <div className="space-y-2 p-2.5">
+                    <p className="truncate text-xs font-black">{file.name}</p>
+                    <p className="text-[0.68rem] text-muted-foreground">{formatFileSize(file.size)} • {file.hidden ? "مخفي" : "محمي"}</p>
+                    <details className="group relative">
+                      <summary className="flex h-8 cursor-pointer list-none items-center justify-center gap-2 rounded-md border border-border/60 bg-background/50 text-xs font-bold text-foreground"><MoreVertical className="h-3.5 w-3.5 text-primary" /> قائمة الملف</summary>
+                      <div className="absolute inset-x-0 bottom-9 z-20 grid gap-1 rounded-xl border border-border/60 bg-popover/95 p-1.5 shadow-glass backdrop-blur-xl">
+                        <button className="rounded-lg px-2 py-2 text-right text-xs font-bold hover:bg-secondary" onClick={() => manageVaultFile(file, "view")}><Play className="ml-1 inline h-3.5 w-3.5 text-primary" /> معاينة المحتوى</button>
+                        <button className="rounded-lg px-2 py-2 text-right text-xs font-bold hover:bg-secondary" onClick={() => manageVaultFile(file, "restore")}><Lock className="ml-1 inline h-3.5 w-3.5 text-primary" /> إلغاء القفل</button>
+                        <button className="rounded-lg px-2 py-2 text-right text-xs font-bold text-destructive-foreground hover:bg-destructive" onClick={() => manageVaultFile(file, "delete")}><Trash2 className="ml-1 inline h-3.5 w-3.5" /> حذف نهائي</button>
+                      </div>
+                    </details>
+                  </div>
                 </div>
               )) : <p className="rounded-2xl border border-border/50 bg-secondary/30 p-4 text-sm text-muted-foreground">لا توجد ملفات داخل المخزن بعد.</p>}
             </div>
@@ -1413,8 +1488,30 @@ const PrivacyVault = ({
         </div>
       </div>
     )}
+    <PatternLockModal open={patternModalOpen} setOpen={setPatternModalOpen} patternEntry={patternEntry} setPatternEntry={setPatternEntry} />
   </div>
 );
+
+const PatternLockModal = ({ open, setOpen, patternEntry, setPatternEntry }: { open: boolean; setOpen: (value: boolean) => void; patternEntry: string; setPatternEntry: (value: string) => void }) => {
+  const selected = patternEntry ? patternEntry.split("-") : [];
+  const toggleNode = (node: string) => setPatternEntry(selected.includes(node) ? selected.filter((item) => item !== node).join("-") : [...selected, node].join("-"));
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogContent className="w-[calc(100vw-2rem)] max-w-sm rounded-3xl border-primary/50 bg-gradient-glass p-5 text-right shadow-gold backdrop-blur-2xl">
+        <DialogTitle className="text-2xl font-black gold-text">إنشاء نمط القفل</DialogTitle>
+        <div className="relative mx-auto mt-4 grid w-full max-w-[17rem] grid-cols-3 gap-4 rounded-3xl border border-border/50 bg-background/35 p-5">
+          <div className="pointer-events-none absolute left-8 right-8 top-1/2 h-1 -translate-y-1/2 rounded-full bg-primary/50 shadow-gold" />
+          {Array.from({ length: 9 }, (_, index) => String(index + 1)).map((node) => {
+            const active = selected.includes(node);
+            return <button key={node} onPointerEnter={() => selected.length && !active && toggleNode(node)} onClick={() => toggleNode(node)} className={`relative z-10 grid aspect-square place-items-center rounded-full border text-lg font-black transition-all ${active ? "border-primary bg-primary text-primary-foreground shadow-gold scale-105" : "border-border/60 bg-secondary/60 text-primary"}`}>{node}</button>;
+          })}
+        </div>
+        <p className="text-center text-sm font-bold text-muted-foreground">{patternEntry || "المس النقاط بالترتيب لإنشاء النمط"}</p>
+        <Button variant="gold" className="w-full" onClick={() => setOpen(false)} disabled={selected.length < 4}>حفظ النمط</Button>
+      </DialogContent>
+    </Dialog>
+  );
+};
 
 const SectionTitle = ({ icon: Icon, title, subtitle }: { icon: typeof Phone; title: string; subtitle: string }) => (
   <div className="flex items-start justify-between gap-4">
