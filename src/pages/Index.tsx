@@ -1407,16 +1407,16 @@ const PrivacyVault = ({
           <p className="mt-3 text-sm leading-7 text-muted-foreground">استخدم رمز PIN أو النمط أو المصادقة الحيوية لفتح المنطقة الآمنة. عند أول استخدام، سيصبح رمز PIN الذي تدخله هو رمزك الدائم.</p>
           <div className="mt-5 grid gap-3 sm:grid-cols-2">
             <Input inputMode="numeric" maxLength={8} value={pinEntry} onChange={(event) => setPinEntry(event.target.value)} placeholder={hasPin ? "أدخل PIN" : "أنشئ PIN جديد"} className="bg-background/70 text-center" dir="ltr" />
-            <Input value={patternEntry} onChange={(event) => setPatternEntry(event.target.value)} placeholder="النمط: ١-٢-٣-٦" className="bg-background/70 text-center" />
+            <Button variant="glass" type="button" onClick={() => setPatternModalOpen(true)} className="justify-between"><KeyRound className="h-4 w-4" /> {patternEntry ? `النمط: ${patternEntry}` : "إنشاء نمط"}</Button>
           </div>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             <Button variant="gold" onClick={unlockVaultWithPin}><KeyRound className="h-4 w-4" /> فتح المخزن</Button>
             <Button variant="glass" onClick={unlockVaultWithBiometric}><Fingerprint className="h-4 w-4" /> تحقق حيوي</Button>
           </div>
         </div>
-        <div className="rounded-3xl border border-border/50 bg-secondary/30 p-5">
-          <div className="grid grid-cols-3 gap-2">
-            {["١", "٢", "٣", "٤", "٥", "٦", "٧", "٨", "٩"].map((node) => <div key={node} className="grid aspect-square place-items-center rounded-2xl border border-border/50 bg-background/45 text-xl font-black text-primary">{node}</div>)}
+          <div className="rounded-3xl border border-border/50 bg-secondary/30 p-4 sm:p-5">
+            <div className="grid grid-cols-3 gap-2 sm:gap-3">
+              {["١", "٢", "٣", "٤", "٥", "٦", "٧", "٨", "٩"].map((node) => <div key={node} className="grid aspect-square place-items-center rounded-2xl border border-border/50 bg-background/45 text-lg font-black text-primary sm:text-xl">{node}</div>)}
           </div>
         </div>
       </div>
@@ -1440,12 +1440,22 @@ const PrivacyVault = ({
             </div>
           </div>
           <div className="rounded-3xl border border-border/50 bg-background/40 p-4">
-            <h4 className="mb-3 font-black">الملفات المحمية</h4>
-            <div className="space-y-2">
+            <h4 className="mb-3 font-black">المعرض السري</h4>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
               {vaultFiles.length ? vaultFiles.map((file) => (
-                <div key={file.id} className="flex items-center justify-between gap-3 rounded-2xl bg-secondary/40 p-3">
-                  <div><p className="font-bold">{file.name}</p><p className="text-xs text-muted-foreground">{formatFileSize(file.size)} • {file.hidden ? "مخفي داخل التطبيق" : "ظاهر داخل المخزن"}</p></div>
-                  <Lock className="h-5 w-5 text-primary" />
+                <div key={file.id} className="overflow-hidden rounded-2xl border border-border/50 bg-secondary/40">
+                  <div className="grid aspect-square place-items-center bg-background/45">
+                    {file.thumbnail ? <img src={file.thumbnail} alt={file.name} className="h-full w-full object-cover" /> : file.type.startsWith("video/") ? <FileVideo className="h-8 w-8 text-primary" /> : <FileArchive className="h-8 w-8 text-primary" />}
+                  </div>
+                  <div className="space-y-2 p-2.5">
+                    <p className="truncate text-xs font-black">{file.name}</p>
+                    <p className="text-[0.68rem] text-muted-foreground">{formatFileSize(file.size)} • {file.hidden ? "مخفي" : "محمي"}</p>
+                    <div className="grid gap-1">
+                      <Button variant="glass" size="sm" className="h-8 text-xs" onClick={() => manageVaultFile(file, "view")}><Play className="h-3.5 w-3.5" /> معاينة المحتوى</Button>
+                      <Button variant="glass" size="sm" className="h-8 text-xs" onClick={() => manageVaultFile(file, "restore")}><Lock className="h-3.5 w-3.5" /> إلغاء القفل</Button>
+                      <Button variant="destructive" size="sm" className="h-8 text-xs" onClick={() => manageVaultFile(file, "delete")}><Trash2 className="h-3.5 w-3.5" /> حذف نهائي</Button>
+                    </div>
+                  </div>
                 </div>
               )) : <p className="rounded-2xl border border-border/50 bg-secondary/30 p-4 text-sm text-muted-foreground">لا توجد ملفات داخل المخزن بعد.</p>}
             </div>
