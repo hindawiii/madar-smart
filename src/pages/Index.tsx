@@ -387,7 +387,7 @@ const Index = () => {
     const fallbackName = currentUser.user_metadata?.full_name || currentUser.user_metadata?.name || currentUser.email || "مستخدم مدار";
     const { data: profile } = await (supabase.from("profiles") as any).select("display_name, custom_tones").eq("user_id", currentUser.id).maybeSingle();
     const { data: cloudCredits } = await supabase.from("user_credits").select("credits").eq("user_id", currentUser.id).maybeSingle();
-    const { data: cloudVaultFiles } = await (supabase.from("vault_files") as any).select("id, file_name, file_size, file_type, thumbnail, hidden, created_at").eq("user_id", currentUser.id).order("created_at", { ascending: false });
+    const { data: cloudVaultFiles } = await (supabase.from("vault_files") as any).select("id, file_name, file_size, file_type, thumbnail, hidden, created_at, storage_path").eq("user_id", currentUser.id).order("created_at", { ascending: false });
     setProfileName(profile?.display_name || fallbackName);
     if (Array.isArray(profile?.custom_tones)) setCustomTones(profile.custom_tones);
     if (typeof cloudCredits?.credits === "number") setCredits(cloudCredits.credits);
@@ -400,6 +400,7 @@ const Index = () => {
         hidden: Boolean(file.hidden),
         encryptedAt: new Date(file.created_at).getTime() || Date.now(),
         thumbnail: file.thumbnail || undefined,
+        storagePath: file.storage_path || undefined,
       })));
     }
   };
@@ -897,6 +898,7 @@ const Index = () => {
                 sharedFile={sharedFile}
                 setSharedFile={setSharedFile}
                 shareCode={shareCode}
+                cloudShareRecords={cloudShareRecords}
                 saveSharedFile={saveSharedFile}
                 receiverCode={receiverCode}
                 setReceiverCode={setReceiverCode}
@@ -927,6 +929,11 @@ const Index = () => {
                 patternEntry={patternEntry}
                 setPatternEntry={setPatternEntry}
                 hasPin={Boolean(vaultPin)}
+                hasVaultSecret={hasVaultSecret}
+                vaultMethod={vaultMethod}
+                vaultSetupStep={vaultSetupStep}
+                chooseVaultMethod={chooseVaultMethod}
+                confirmVaultSecret={confirmVaultSecret}
                 unlockVaultWithPin={unlockVaultWithPin}
                 unlockVaultWithBiometric={unlockVaultWithBiometric}
                 patternModalOpen={patternModalOpen}
