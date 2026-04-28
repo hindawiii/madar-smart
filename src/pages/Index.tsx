@@ -1762,19 +1762,19 @@ const LabeledInput = ({ label, value, onChange, suffix }: { label: string; value
 );
 
 const LargeAction = ({ icon: Icon, label, onClick }: { icon: typeof Radio; label: string; onClick: () => void }) => (
-  <button onClick={onClick} className="min-h-28 rounded-2xl border border-border/50 bg-background/40 p-4 text-right transition-all hover:-translate-y-1 hover:border-primary/60 hover:bg-primary/10">
-    <Icon className="mb-3 h-7 w-7 text-primary" />
-    <span className="font-black">{label}</span>
+  <button onClick={onClick} className="min-h-20 rounded-2xl border border-border/50 bg-background/40 p-3 text-right transition-all hover:-translate-y-1 hover:border-primary/60 hover:bg-primary/10 sm:min-h-28 sm:p-4">
+    <Icon className="mb-2 h-5 w-5 text-primary sm:mb-3 sm:h-7 sm:w-7" />
+    <span className="text-sm font-black sm:text-base">{label}</span>
   </button>
 );
 
 const ShareChoiceCard = ({ icon: Icon, title, subtitle, onClick }: { icon: typeof Cloud; title: string; subtitle: string; onClick: () => void }) => (
-  <button onClick={onClick} className="group relative overflow-hidden rounded-3xl border border-border/50 bg-gradient-glass p-6 text-right shadow-glass transition-all duration-300 hover:-translate-y-1 hover:border-primary/70 hover:shadow-gold animate-scale-in">
-    <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-gold text-primary-foreground shadow-gold transition-transform duration-300 group-hover:scale-110"><Icon className="h-8 w-8" /></div>
-    <div className="mt-24">
-      <h3 className="text-3xl font-black gold-text">{title}</h3>
-      <p className="mt-3 max-w-md text-sm font-semibold leading-7 text-muted-foreground">{subtitle}</p>
-      <span className="mt-6 inline-flex items-center gap-2 rounded-full border border-primary/50 bg-primary/10 px-4 py-2 text-sm font-black text-primary"><Maximize2 className="h-4 w-4" /> فتح مساحة العمل</span>
+  <button onClick={onClick} className="group relative overflow-hidden rounded-2xl border border-border/50 bg-gradient-glass p-3 text-right shadow-glass transition-all duration-300 hover:-translate-y-1 hover:border-primary/70 hover:shadow-gold sm:rounded-3xl sm:p-6 animate-scale-in">
+    <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-gold text-primary-foreground shadow-gold transition-transform duration-300 group-hover:scale-110 sm:h-16 sm:w-16 sm:rounded-2xl"><Icon className="h-5 w-5 sm:h-8 sm:w-8" /></div>
+    <div className="mt-5 sm:mt-24">
+      <h3 className="text-base font-black gold-text sm:text-3xl">{title}</h3>
+      <p className="mt-2 line-clamp-3 max-w-md text-xs font-semibold leading-6 text-muted-foreground sm:mt-3 sm:text-sm sm:leading-7">{subtitle}</p>
+      <span className="mt-3 inline-flex items-center gap-1 rounded-full border border-primary/50 bg-primary/10 px-2.5 py-1.5 text-[0.68rem] font-black text-primary sm:mt-6 sm:gap-2 sm:px-4 sm:py-2 sm:text-sm"><Maximize2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" /> فتح</span>
     </div>
   </button>
 );
