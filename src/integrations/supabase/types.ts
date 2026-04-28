@@ -160,7 +160,16 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      get_shared_file_by_code: {
+        Args: { _code: string }
+        Returns: {
+          expires_at: string
+          file_name: string
+          file_size: number
+          file_type: string
+          metadata: Json
+        }[]
+      }
     }
     Enums: {
       [_ in never]: never
