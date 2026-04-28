@@ -122,6 +122,13 @@ const formatFileSize = (bytes: number) => {
   return `${(bytes / 1024 / 1024).toFixed(1)} م.ب`;
 };
 
+const readFileAsDataUrl = (file: File) => new Promise<string>((resolve) => {
+  const reader = new FileReader();
+  reader.onload = () => resolve(String(reader.result || ""));
+  reader.onerror = () => resolve("");
+  reader.readAsDataURL(file);
+});
+
 const createCode = () => String(Math.floor(100000 + Math.random() * 900000));
 
 const detectFormats = (link: string): MediaFormat[] => {
