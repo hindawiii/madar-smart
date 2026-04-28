@@ -385,6 +385,8 @@ const Index = () => {
 
   const loadCloudUserData = async (currentUser: AuthUser) => {
     const fallbackName = currentUser.user_metadata?.full_name || currentUser.user_metadata?.name || currentUser.email || "مستخدم مدار";
+    await (supabase.from("profiles") as any).upsert({ user_id: currentUser.id, display_name: fallbackName, avatar_url: currentUser.user_metadata?.avatar_url ?? null }, { onConflict: "user_id" });
+    await supabase.from("user_credits").upsert({ user_id: currentUser.id, credits, trials_used: Math.max(0, 3 - credits) }, { onConflict: "user_id" });
     const { data: profile } = await (supabase.from("profiles") as any).select("display_name, custom_tones").eq("user_id", currentUser.id).maybeSingle();
     const { data: cloudCredits } = await supabase.from("user_credits").select("credits").eq("user_id", currentUser.id).maybeSingle();
     const { data: cloudVaultFiles } = await (supabase.from("vault_files") as any).select("id, file_name, file_size, file_type, thumbnail, hidden, created_at, storage_path").eq("user_id", currentUser.id).order("created_at", { ascending: false });
@@ -392,7 +394,7 @@ const Index = () => {
     if (Array.isArray(profile?.custom_tones)) setCustomTones(profile.custom_tones);
     if (typeof cloudCredits?.credits === "number") setCredits(cloudCredits.credits);
     if (Array.isArray(cloudVaultFiles)) {
-      setVaultFiles(cloudVaultFiles.map((file: any) => ({
+      setVaultFiles((localFiles) => cloudVaultFiles.map((file: any) => ({
         id: file.id,
         name: file.file_name,
         size: Number(file.file_size) || 0,
@@ -401,6 +403,7 @@ const Index = () => {
         encryptedAt: new Date(file.created_at).getTime() || Date.now(),
         thumbnail: file.thumbnail || undefined,
         storagePath: file.storage_path || undefined,
+        dataUrl: localFiles.find((local) => local.id === file.id)?.dataUrl,
       })));
     }
   };
