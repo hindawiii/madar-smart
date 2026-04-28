@@ -254,11 +254,13 @@ const Index = () => {
   const [sharedFile, setSharedFile] = useState<File | null>(null);
   const [shareCode, setShareCode] = useState("");
   const [receiverCode, setReceiverCode] = useState("");
+  const [cloudShareRecords, setCloudShareRecords] = useState<SharedFileRecord[]>(() => JSON.parse(window.localStorage.getItem(SHARE_STORAGE_KEY) || "[]") as SharedFileRecord[]);
   const [localPairCode, setLocalPairCode] = useState("");
   const [scannerOpen, setScannerOpen] = useState(false);
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
   const [webrtcStatus, setWebrtcStatus] = useState("غير متصل");
   const [peerConnection, setPeerConnection] = useState<RTCPeerConnection | null>(null);
+  const dataChannelRef = useRef<RTCDataChannel | null>(null);
   const [connectedDevices, setConnectedDevices] = useState<ConnectedDevice[]>([
     { id: "nearby-1", name: "هاتف قريب", status: "جاهز للاقتران" },
     { id: "nearby-2", name: "حاسوب العمل", status: "تم العثور عليه" },
@@ -267,6 +269,9 @@ const Index = () => {
   const [vaultUnlocked, setVaultUnlocked] = useState(false);
   const [vaultPin, setVaultPin] = useState(() => window.localStorage.getItem("madar_vault_pin") || "");
   const [vaultPattern, setVaultPattern] = useState(() => window.localStorage.getItem("madar_vault_pattern") || "");
+  const [vaultMethod, setVaultMethod] = useState<VaultAuthMethod>(() => (window.localStorage.getItem("madar_vault_method") as VaultAuthMethod) || "pin");
+  const [vaultSetupStep, setVaultSetupStep] = useState<VaultSetupStep>(() => (window.localStorage.getItem("madar_vault_pin") || window.localStorage.getItem("madar_vault_pattern") || window.localStorage.getItem(VAULT_BIOMETRIC_KEY) === "true") ? "unlock" : "method");
+  const [pendingSecret, setPendingSecret] = useState("");
   const [pinEntry, setPinEntry] = useState("");
   const [patternEntry, setPatternEntry] = useState("");
   const [patternModalOpen, setPatternModalOpen] = useState(false);
