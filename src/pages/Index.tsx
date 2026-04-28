@@ -917,7 +917,7 @@ const HomeSection = ({ credits, rewardAd, user, signInWithGoogle, shareApp }: { 
 );
 
 const FloatingNavigation = ({ activeSection, setActiveSection, activeIndex }: { activeSection: Section; setActiveSection: (section: Section) => void; activeIndex: number }) => (
-  <nav className="fixed inset-x-0 bottom-4 z-40 mx-auto w-[min(96vw,46rem)] rounded-full border border-border/70 bg-glass/75 p-2 shadow-glass backdrop-blur-2xl">
+  <nav className="fixed inset-x-0 bottom-3 z-40 mx-auto w-[min(96vw,46rem)] rounded-3xl border border-border/70 bg-glass/75 p-1.5 shadow-glass backdrop-blur-2xl sm:bottom-4 sm:rounded-full sm:p-2">
     <div className="relative grid grid-cols-5 gap-1">
       <span className="absolute bottom-0 top-0 w-1/5 rounded-full bg-primary/15 transition-transform duration-300" style={{ transform: `translateX(${-activeIndex * 100}%)`, right: 0 }} />
       {navItems.map((item) => {
@@ -927,10 +927,10 @@ const FloatingNavigation = ({ activeSection, setActiveSection, activeIndex }: { 
           <button
             key={item.id}
             onClick={() => setActiveSection(item.id)}
-            className={`relative z-10 flex min-h-14 flex-col items-center justify-center gap-1 rounded-full text-xs font-bold transition-all duration-300 ${active ? "-translate-y-1 text-primary drop-shadow" : "text-muted-foreground"}`}
+            className={`relative z-10 flex min-h-12 flex-col items-center justify-center gap-0.5 rounded-2xl px-1 text-[0.63rem] font-bold leading-tight transition-all duration-300 sm:min-h-14 sm:gap-1 sm:rounded-full sm:text-xs ${active ? "-translate-y-0.5 text-primary drop-shadow sm:-translate-y-1" : "text-muted-foreground"}`}
           >
-            <Icon className="h-5 w-5 transition-all" />
-            <span>{item.label}</span>
+            <Icon className="h-4 w-4 transition-all sm:h-5 sm:w-5" />
+            <span className="max-w-full truncate">{item.label}</span>
           </button>
         );
       })}
