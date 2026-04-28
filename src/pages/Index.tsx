@@ -1604,21 +1604,22 @@ const PrivacyVault = ({
     {!vaultUnlocked ? (
       <div className="grid gap-5 lg:grid-cols-[1fr_0.85fr]">
         <div className="rounded-3xl border border-primary/40 bg-gradient-glass p-6 shadow-gold">
-          <div className="mb-5 flex h-20 w-20 items-center justify-center rounded-2xl bg-gradient-gold text-primary-foreground shadow-gold"><Lock className="h-10 w-10" /></div>
+          <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-gold text-primary-foreground shadow-gold sm:h-20 sm:w-20"><Lock className="h-8 w-8 sm:h-10 sm:w-10" /></div>
           <h3 className="text-3xl font-black gold-text">الخزنة مقفلة</h3>
-          <p className="mt-3 text-sm leading-7 text-muted-foreground">استخدم رمز PIN أو النمط أو المصادقة الحيوية لفتح المنطقة الآمنة. عند أول استخدام، سيصبح رمز PIN الذي تدخله هو رمزك الدائم.</p>
+          <p className="mt-3 text-sm leading-7 text-muted-foreground">{hasVaultSecret ? "اختر وسيلة القفل المحفوظة ثم افتح الخزنة." : "الخطوة الأولى: اختر وسيلة الحماية. الخطوة الثانية: أدخلها ثم أكدها لتفعيل قفل الملفات."}</p>
+          {!hasVaultSecret && vaultSetupStep === "method" && <div className="mt-5 grid grid-cols-3 gap-2"><Button variant="glass" className="h-auto flex-col py-3 text-xs" onClick={() => chooseVaultMethod("pattern")}><KeyRound className="h-4 w-4" /> نمط</Button><Button variant="gold" className="h-auto flex-col py-3 text-xs" onClick={() => chooseVaultMethod("pin")}><Lock className="h-4 w-4" /> PIN</Button><Button variant="glass" className="h-auto flex-col py-3 text-xs" onClick={() => chooseVaultMethod("biometric")}><Fingerprint className="h-4 w-4" /> حيوي</Button></div>}
           <div className="mt-5 grid gap-3 sm:grid-cols-2">
-            <Input inputMode="numeric" maxLength={8} value={pinEntry} onChange={(event) => setPinEntry(event.target.value)} placeholder={hasPin ? "أدخل PIN" : "أنشئ PIN جديد"} className="bg-background/70 text-center" dir="ltr" />
-            <Button variant="glass" type="button" onClick={() => setPatternModalOpen(true)} className="justify-between"><KeyRound className="h-4 w-4" /> {patternEntry ? `النمط: ${patternEntry}` : "إنشاء نمط"}</Button>
+            {(vaultMethod === "pin" || hasPin) && <Input inputMode="numeric" maxLength={8} value={pinEntry} onChange={(event) => setPinEntry(event.target.value.replace(/\D/g, ""))} placeholder={vaultSetupStep === "confirm" && !hasVaultSecret ? "أكّد PIN" : hasPin ? "أدخل PIN" : "أنشئ PIN جديد"} className="bg-background/70 text-center" dir="ltr" />}
+            {(vaultMethod === "pattern" || !hasPin) && <Button variant="glass" type="button" onClick={() => setPatternModalOpen(true)} className="justify-between"><KeyRound className="h-4 w-4" /> {patternEntry ? "تم رسم النمط" : vaultSetupStep === "confirm" ? "تأكيد النمط" : "رسم النمط"}</Button>}
           </div>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            <Button variant="gold" onClick={unlockVaultWithPin}><KeyRound className="h-4 w-4" /> فتح المخزن</Button>
+            <Button variant="gold" onClick={hasVaultSecret ? unlockVaultWithPin : confirmVaultSecret}><KeyRound className="h-4 w-4" /> {hasVaultSecret ? "فتح المخزن" : vaultSetupStep === "confirm" ? "تأكيد" : "متابعة"}</Button>
             <Button variant="glass" onClick={unlockVaultWithBiometric}><Fingerprint className="h-4 w-4" /> تحقق حيوي</Button>
           </div>
         </div>
           <div className="rounded-3xl border border-border/50 bg-secondary/30 p-4 sm:p-5">
             <div className="grid grid-cols-3 gap-2 sm:gap-3">
-              {["١", "٢", "٣", "٤", "٥", "٦", "٧", "٨", "٩"].map((node) => <div key={node} className="grid aspect-square place-items-center rounded-2xl border border-border/50 bg-background/45 text-lg font-black text-primary sm:text-xl">{node}</div>)}
+              {Array.from({ length: 9 }, (_, index) => <div key={index} className="grid aspect-square place-items-center rounded-full border border-primary/40 bg-primary/10"><span className="h-3 w-3 rounded-full bg-primary shadow-gold" /></div>)}
           </div>
         </div>
       </div>
