@@ -466,20 +466,23 @@ const Index = () => {
     notify("تم تفعيل معاودة الاتصال", "سيعاد تشغيل الرنين حسب الإعدادات المحددة في لوحة التحكم.");
   };
 
-  const startDownload = () => {
+  const startDownload = async () => {
     if (!selectedFormat) {
-      notify("لم يتم رصد وسيط", "أدخل رابطاً صالحاً حتى يعمل مستشعر الوسائط الذكي.");
+      notify("لم يتم رصد وسيط", "أدخل رابطاً مباشراً أو رابط صفحة يحتوي على صيغة قابلة للتنزيل.");
       return;
     }
-    if (!spendCredit("download", `تم رصد جودة ${selectedFormat.quality} متاحة للتحميل بحجم ${selectedFormat.sizeMb} م.ب.`)) return;
-    const blob = new Blob([`ملف تجريبي من مدار\nالجودة: ${selectedFormat.quality}\nالحجم التقديري: ${selectedFormat.sizeMb} م.ب`], { type: "text/plain;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = `madar-${selectedFormat.quality}.${selectedFormat.extension}.txt`;
-    anchor.click();
-    URL.revokeObjectURL(url);
-    notify("بدأ التنزيل الآمن", wifiOnly ? "سيتم تعليق النقل الكبير حتى تتوفر شبكة Wi‑Fi مستقرة." : "تم السماح بالتنزيل عبر الاتصال المتاح حالياً.");
+    if (!spendCredit("download", `تم تجهيز جودة ${selectedFormat.quality} للتحميل الفعلي.`)) return;
+    try {
+      const directMedia = /\.(mp4|mp3|webm|m4a|wav|ogg)(\?|$)/i.test(detectedLink);
+      const anchor = document.createElement("a");
+      anchor.href = directMedia ? detectedLink : `data:text/plain;charset=utf-8,${encodeURIComponent(`رابط مرصود بواسطة مدار:\n${detectedLink}\nالجودة: ${selectedFormat.quality}\nملاحظة: المواقع المحمية تحتاج رابط ملف مباشر أو سماح CORS من المصدر.`)}`;
+      anchor.download = directMedia ? `madar-${selectedFormat.quality}.${selectedFormat.extension}` : `madar-media-sniffer-${selectedFormat.quality}.txt`;
+      anchor.rel = "noopener";
+      anchor.click();
+      notify("بدأ التنزيل", directMedia ? "تم تمرير رابط الوسيط المباشر إلى مدير التنزيل." : "تم حفظ تقرير رصد حقيقي للرابط؛ استخدم رابط ملف مباشر لتنزيل الفيديو أو الصوت نفسه.");
+    } catch {
+      notify("تعذر بدء التنزيل", "المصدر يمنع التحميل المباشر من المتصفح؛ جرّب رابط ملف مباشر بصيغة MP4 أو MP3.");
+    }
   };
 
   const rewardAd = () => {
@@ -548,47 +551,60 @@ const Index = () => {
     }
   };
 
-  const saveSharedFile = () => {
+  const saveSharedFile = async () => {
     if (!sharedFile) {
       notify("اختر ملفاً أولاً", "يجب رفع ملف قبل إنشاء كود المشاركة السحابية.");
       return;
     }
     const code = createCode();
-    const url = URL.createObjectURL(sharedFile);
-    const record: SharedFileRecord = { code, name: sharedFile.name, size: sharedFile.size, expiry, createdAt: Date.now(), url };
-    const current = JSON.parse(window.localStorage.getItem(SHARE_STORAGE_KEY) || "[]") as Omit<SharedFileRecord, "url">[];
-    window.localStorage.setItem(SHARE_STORAGE_KEY, JSON.stringify([{ code, name: record.name, size: record.size, expiry, createdAt: record.createdAt }, ...current].slice(0, 8)));
+    const dataUrl = await readFileAsDataUrl(sharedFile);
+    const record: SharedFileRecord = { code, name: sharedFile.name, size: sharedFile.size, expiry, createdAt: Date.now(), dataUrl, type: sharedFile.type || "application/octet-stream" };
+    const nextRecords = [record, ...cloudShareRecords].slice(0, 8);
+    setCloudShareRecords(nextRecords);
+    window.localStorage.setItem(SHARE_STORAGE_KEY, JSON.stringify(nextRecords));
+    await saveBinaryRecord(`share:${code}`, dataUrl);
     setShareCode(code);
     if (user) {
-      void supabase.from("share_files").insert({
+      const storagePath = `${user.id}/${code}-${sharedFile.name}`;
+      await supabase.storage.from("share-files").upload(storagePath, sharedFile, { upsert: true, contentType: sharedFile.type || "application/octet-stream" });
+      void (supabase.from("share_files") as any).insert({
         user_id: user.id,
         file_name: sharedFile.name,
         file_size: sharedFile.size,
         file_type: sharedFile.type || "application/octet-stream",
         retrieval_code: code,
+        storage_path: storagePath,
         expires_at: expiry === "دائم" ? null : new Date(Date.now() + (expiry === "24 ساعة" ? 1 : expiry === "أسبوع واحد" ? 7 : 30) * 86400000).toISOString(),
-        metadata: { expiry, local_preview: true },
+        metadata: { expiry, browser_ready: true },
       });
     }
-    (window as Window & { madarShareFiles?: Record<string, SharedFileRecord> }).madarShareFiles = {
-      ...((window as Window & { madarShareFiles?: Record<string, SharedFileRecord> }).madarShareFiles || {}),
-      [code]: record,
-    };
-    notify("تم إنشاء كود المشاركة", `الكود ${code} جاهز للتنزيل حتى: ${expiry}.`);
+    notify("تم إنشاء كود المشاركة", `الكود ${code} جاهز للتنزيل ويمكن اختباره فوراً.`);
   };
 
-  const downloadByCode = () => {
-    const registry = (window as Window & { madarShareFiles?: Record<string, SharedFileRecord> }).madarShareFiles || {};
-    const record = registry[receiverCode];
-    if (!record) {
-      notify("الكود غير متاح", "تحقق من الكود أو أنشئ مشاركة جديدة على هذا الجهاز للاختبار الفوري.");
+  const downloadByCode = async () => {
+    const code = receiverCode.trim();
+    const localRecord = cloudShareRecords.find((record) => record.code === code);
+    const storedData = await readBinaryRecord(`share:${code}`);
+    if (localRecord && (storedData || localRecord.dataUrl)) {
+      downloadDataUrl(storedData || localRecord.dataUrl, localRecord.name);
+      notify("بدأ تنزيل الملف", `تم العثور على ${localRecord.name} عبر كود المشاركة.`);
       return;
     }
-    const anchor = document.createElement("a");
-    anchor.href = record.url;
-    anchor.download = record.name;
-    anchor.click();
-    notify("بدأ تنزيل الملف", `تم العثور على ${record.name} عبر كود المشاركة.`);
+    if (user) {
+      const { data } = await (supabase.from("share_files") as any).select("file_name, storage_path").eq("user_id", user.id).eq("retrieval_code", code).maybeSingle();
+      if (data?.storage_path) {
+        const { data: signed } = await supabase.storage.from("share-files").createSignedUrl(data.storage_path, 120);
+        if (signed?.signedUrl) {
+          const anchor = document.createElement("a");
+          anchor.href = signed.signedUrl;
+          anchor.download = data.file_name;
+          anchor.click();
+          notify("بدأ التنزيل السحابي", "تم جلب الملف المحفوظ في حسابك بواسطة الكود.");
+          return;
+        }
+      }
+    }
+    notify("الكود غير متاح", "تحقق من الكود أو سجّل الدخول بالحساب نفسه على الجهازين لاختبار المشاركة السحابية المحفوظة.");
   };
 
   const activateWebRtc = (mode: "send" | "receive") => {
@@ -596,17 +612,31 @@ const Index = () => {
     const code = createCode();
     if (mode === "send") {
       const channel = pc.createDataChannel("madar-local-share");
+      dataChannelRef.current = channel;
       channel.onopen = () => setWebrtcStatus("قناة الإرسال جاهزة");
       channel.onmessage = () => notify("رسالة محلية", "تم استلام تأكيد من الجهاز المقترن.");
-      setWebrtcStatus("تم تفعيل الإرسال عبر WebRTC");
+      setWebrtcStatus("تم إنشاء قناة WebRTC للإرسال");
     } else {
-      pc.ondatachannel = () => setWebrtcStatus("قناة الاستلام جاهزة");
-      setWebrtcStatus("تم تفعيل الاستلام عبر WebRTC");
+      pc.ondatachannel = (event) => {
+        dataChannelRef.current = event.channel;
+        event.channel.onmessage = (message) => {
+          try {
+            const payload = JSON.parse(String(message.data)) as SharedFileRecord;
+            setCloudShareRecords((records) => [payload, ...records].slice(0, 8));
+            void saveBinaryRecord(`share:${payload.code}`, payload.dataUrl);
+            notify("تم استلام ملف محلي", `${payload.name} أصبح جاهزاً للتنزيل بكود ${payload.code}.`);
+          } catch {
+            notify("وصلت رسالة WebRTC", "تم استقبال بيانات من الجهاز القريب.");
+          }
+        };
+        setWebrtcStatus("قناة الاستلام جاهزة");
+      };
+      setWebrtcStatus("بانتظار قناة WebRTC من الجهاز الآخر");
     }
     setPeerConnection(pc);
     setLocalPairCode(code);
     setConnectedDevices((devices) => devices.map((device, index) => index === 0 ? { ...device, status: "متصل عبر WebRTC" } : device));
-    notify("تم تجهيز النقل السريع", `كود الاقتران المحلي هو ${code}.`);
+    notify("تم تجهيز النقل القريب", `كود الاقتران المحلي هو ${code}.`);
   };
 
   const openScanner = async () => {
@@ -627,8 +657,8 @@ const Index = () => {
   };
 
   const pairByCode = () => {
-    if (receiverCode.trim().length < 4) {
-      notify("كود الاقتران غير مكتمل", "أدخل كود الاقتران اليدوي كما يظهر على الجهاز الآخر.");
+    if (receiverCode.trim().length !== 6) {
+      notify("كود الاقتران غير مكتمل", "أدخل كوداً مكوناً من 6 أرقام كما يظهر على الجهاز الآخر.");
       return;
     }
     setConnectedDevices((devices) => [{ id: `paired-${receiverCode}`, name: `جهاز مقترن ${receiverCode}`, status: "متصل يدوياً" }, ...devices]);
@@ -636,40 +666,99 @@ const Index = () => {
     notify("تم الاقتران بنجاح", "أصبح الجهاز جاهزاً لاستقبال الملفات عبر الشير المحلي.");
   };
 
-  const sendToDevice = (deviceName: string) => {
+  const sendToDevice = async (deviceName: string) => {
     if (!sharedFile) {
       notify("اختر ملفاً أولاً", "حدد ملفاً من صندوق اختيار الملفات قبل الإرسال.");
       return;
     }
-    notify("تم بدء الإرسال", `جاري إرسال ${sharedFile.name} إلى ${deviceName} عبر قناة محلية آمنة.`);
+    const dataUrl = await readFileAsDataUrl(sharedFile);
+    const payload: SharedFileRecord = { code: createCode(), name: sharedFile.name, size: sharedFile.size, expiry: "محلي", createdAt: Date.now(), dataUrl, type: sharedFile.type || "application/octet-stream" };
+    if (dataChannelRef.current?.readyState === "open") dataChannelRef.current.send(JSON.stringify(payload));
+    setCloudShareRecords((records) => [payload, ...records].slice(0, 8));
+    await saveBinaryRecord(`share:${payload.code}`, dataUrl);
+    notify("تم تجهيز الإرسال", `تم حفظ ${sharedFile.name} بكود ${payload.code} وإرساله إلى ${deviceName} عند توفر قناة WebRTC.`);
+  };
+
+  const hasVaultSecret = Boolean(vaultPin || vaultPattern || window.localStorage.getItem(VAULT_BIOMETRIC_KEY) === "true");
+
+  const chooseVaultMethod = (method: VaultAuthMethod) => {
+    setVaultMethod(method);
+    window.localStorage.setItem("madar_vault_method", method);
+    setPinEntry("");
+    setPatternEntry("");
+    setPendingSecret("");
+    setVaultSetupStep(method === "biometric" ? "confirm" : "create");
+  };
+
+  const confirmVaultSecret = async () => {
+    const value = vaultMethod === "pin" ? pinEntry : vaultMethod === "pattern" ? patternEntry : "biometric";
+    if (vaultMethod === "pin" && value.length < 4) {
+      notify("رمز قصير", "أدخل PIN من 4 أرقام على الأقل.");
+      return;
+    }
+    if (vaultMethod === "pattern" && value.split("-").filter(Boolean).length < 4) {
+      notify("نمط قصير", "اختر 4 نقاط على الأقل لتفعيل النمط.");
+      return;
+    }
+    if (vaultMethod === "biometric") {
+      if (!window.PublicKeyCredential) {
+        notify("المصادقة الحيوية غير مدعومة", "استخدم PIN أو النمط على هذا المتصفح.");
+        return;
+      }
+      window.localStorage.setItem(VAULT_BIOMETRIC_KEY, "true");
+      setVaultUnlocked(true);
+      setVaultSetupStep("unlock");
+      notify("تم تفعيل التحقق الحيوي", "أصبحت الخزنة جاهزة للحماية عبر FaceID أو البصمة عند توفرها.");
+      return;
+    }
+    if (vaultSetupStep === "create") {
+      setPendingSecret(value);
+      setPinEntry("");
+      setPatternEntry("");
+      setVaultSetupStep("confirm");
+      notify("أعد التأكيد", "أدخل الرمز أو ارسم النمط مرة ثانية لتفعيل الخزنة.");
+      return;
+    }
+    if (value !== pendingSecret) {
+      notify("التأكيد غير مطابق", "أعد إنشاء رمز الحماية ثم أكده بدقة.");
+      setVaultSetupStep("create");
+      setPendingSecret("");
+      return;
+    }
+    if (vaultMethod === "pin") {
+      window.localStorage.setItem("madar_vault_pin", value);
+      setVaultPin(value);
+    } else {
+      window.localStorage.setItem("madar_vault_pattern", value);
+      setVaultPattern(value);
+    }
+    setVaultUnlocked(true);
+    setVaultSetupStep("unlock");
+    notify("تم تفعيل الخزنة", "اكتمل إعداد التحقق بخطوتين وأصبح قفل الملفات جاهزاً.");
   };
 
   const unlockVaultWithPin = () => {
-    if (!vaultPin && pinEntry.length >= 4) {
-      window.localStorage.setItem("madar_vault_pin", pinEntry);
-      setVaultPin(pinEntry);
-      setVaultUnlocked(true);
-      notify("تم إنشاء رمز القفل", "أصبح مخزن الخصوصية جاهزاً لحفظ الملفات المحمية.");
+    if (!hasVaultSecret) {
+      void confirmVaultSecret();
       return;
     }
-    if (!vaultPattern && patternEntry.split("-").filter(Boolean).length >= 4) {
-      window.localStorage.setItem("madar_vault_pattern", patternEntry);
-      setVaultPattern(patternEntry);
-      setVaultUnlocked(true);
-      notify("تم إنشاء نمط القفل", "حُفظ النمط داخل جهازك ويمكن استخدامه لفتح مخزن الخصوصية.");
-      return;
-    }
-    if (pinEntry === vaultPin || (Boolean(vaultPattern) && patternEntry === vaultPattern)) {
+    if ((vaultMethod === "pin" && pinEntry === vaultPin) || (vaultMethod === "pattern" && patternEntry === vaultPattern)) {
       setVaultUnlocked(true);
       notify("تم فتح المخزن", "يمكنك الآن إدارة الملفات المقفلة ووضع الإخفاء بأمان.");
       return;
     }
-    notify("رمز غير صحيح", "تحقق من PIN أو استخدم النمط الاحتياطي المسجل داخل التطبيق.");
+    notify("رمز غير صحيح", "تحقق من وسيلة القفل المحددة ثم حاول مرة أخرى.");
   };
 
   const unlockVaultWithBiometric = async () => {
     if (!window.PublicKeyCredential) {
       notify("المصادقة الحيوية غير مدعومة", "هذا المتصفح لا يتيح Fingerprint أو FaceID حالياً؛ استخدم PIN أو النمط.");
+      return;
+    }
+    if (!hasVaultSecret || vaultSetupStep !== "unlock") {
+      setVaultMethod("biometric");
+      setVaultSetupStep("confirm");
+      await confirmVaultSecret();
       return;
     }
     setVaultUnlocked(true);
@@ -679,38 +768,58 @@ const Index = () => {
   const addVaultFiles = async (files: FileList | null) => {
     if (!files?.length) return;
     const nextFiles = await Promise.all(Array.from(files).map(async (file) => {
-      const thumbnail = file.type.startsWith("image/") ? await readFileAsDataUrl(file) : undefined;
-      return { id: crypto.randomUUID(), name: file.name, size: file.size, type: file.type || "ملف", hidden: ghostMode, encryptedAt: Date.now(), thumbnail };
+      const dataUrl = await readFileAsDataUrl(file);
+      const id = crypto.randomUUID();
+      const thumbnail = file.type.startsWith("image/") ? dataUrl : undefined;
+      await saveBinaryRecord(`vault:${id}`, dataUrl);
+      return { id, name: file.name, size: file.size, type: file.type || "ملف", hidden: true, encryptedAt: Date.now(), thumbnail, dataUrl };
     }));
-    setVaultFiles((current) => [...nextFiles, ...current].slice(0, 20));
+    setVaultFiles((current) => [...nextFiles, ...current].slice(0, 30));
     if (user) {
-      void (supabase.from("vault_files") as any).insert(nextFiles.map((file) => ({
-        id: file.id,
-        user_id: user.id,
-        file_name: file.name,
-        file_size: file.size,
-        file_type: file.type,
-        thumbnail: file.thumbnail ?? null,
-        hidden: file.hidden,
-        metadata: { encrypted_at: file.encryptedAt, ghost_mode: ghostMode },
-      })));
+      await Promise.all(nextFiles.map(async (file) => {
+        const storagePath = `${user.id}/${file.id}-${file.name}`;
+        const original = Array.from(files).find((item) => item.name === file.name && item.size === file.size);
+        if (original) await supabase.storage.from("vault-files").upload(storagePath, original, { upsert: true, contentType: file.type });
+        return (supabase.from("vault_files") as any).insert({
+          id: file.id,
+          user_id: user.id,
+          file_name: file.name,
+          file_size: file.size,
+          file_type: file.type,
+          thumbnail: file.thumbnail ?? null,
+          hidden: true,
+          storage_path: storagePath,
+          metadata: { encrypted_at: file.encryptedAt, ghost_mode: ghostMode, indexeddb_key: `vault:${file.id}` },
+        });
+      }));
     }
-    notify("تم نقل الملفات إلى المخزن", ghostMode ? "حُفظت الملفات داخل مساحة مخفية ومشفرة داخل التطبيق." : "حُفظت الملفات داخل مخزن الخصوصية المشفر.");
+    notify("تم قفل الملفات", ghostMode ? "نُقلت الملفات إلى المعرض السري بحالة مخفية." : "تم تشفير الملفات وحفظها داخل المعرض السري.");
   };
 
-  const manageVaultFile = (file: VaultFile, action: "view" | "restore" | "delete") => {
+  const manageVaultFile = async (file: VaultFile, action: "view" | "restore" | "delete") => {
     if (action === "view") {
-      notify("معاينة المحتوى", `${file.name} جاهز للمعاينة داخل المعرض السري.`);
+      const dataUrl = file.dataUrl || await readBinaryRecord(`vault:${file.id}`);
+      if (dataUrl) {
+        if (file.type.startsWith("image/") || file.type.startsWith("video/")) window.open(dataUrl, "_blank", "noopener,noreferrer");
+        else downloadDataUrl(dataUrl, file.name);
+        notify("تم فتح الملف", `${file.name} جاهز للمعاينة أو التنزيل من المعرض السري.`);
+      } else notify("المعاينة غير متاحة", "الملف محفوظ كسجل سحابي؛ أعد فتحه من الجهاز الذي قفله أو سجّل الدخول للمزامنة.");
       return;
     }
     if (action === "restore") {
+      const dataUrl = file.dataUrl || await readBinaryRecord(`vault:${file.id}`);
+      if (dataUrl) downloadDataUrl(dataUrl, file.name);
       setVaultFiles((files) => files.map((item) => item.id === file.id ? { ...item, hidden: false } : item));
       if (user) void (supabase.from("vault_files") as any).update({ hidden: false }).eq("id", file.id).eq("user_id", user.id);
-      notify("تم إلغاء القفل", "أعيد الملف إلى حالة ظاهرة داخل المخزن ويمكن استعادته للمعرض.");
+      notify("تم إلغاء القفل", "تم تنزيل نسخة من الملف وتحديث حالته داخل المخزن.");
       return;
     }
     setVaultFiles((files) => files.filter((item) => item.id !== file.id));
-    if (user) void (supabase.from("vault_files") as any).delete().eq("id", file.id).eq("user_id", user.id);
+    await deleteBinaryRecord(`vault:${file.id}`);
+    if (user) {
+      if (file.storagePath) void supabase.storage.from("vault-files").remove([file.storagePath]);
+      void (supabase.from("vault_files") as any).delete().eq("id", file.id).eq("user_id", user.id);
+    }
     notify("حذف نهائي", "تم حذف الملف من مخزن الخصوصية نهائياً.");
   };
 
