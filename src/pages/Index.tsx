@@ -667,9 +667,9 @@ const Index = () => {
   };
 
   return (
-    <main className="min-h-screen overflow-hidden bg-orbit font-cairo text-foreground">
+    <main className="min-h-screen overflow-x-hidden bg-orbit font-cairo text-foreground">
       <div className="pointer-events-none fixed inset-0 orbit-grid opacity-60" />
-      <div className="relative mx-auto flex min-h-screen w-full max-w-7xl flex-col px-4 pb-28 pt-4 sm:px-6 lg:px-8">
+      <div className="relative mx-auto flex min-h-screen w-full max-w-7xl flex-col px-3 pb-28 pt-3 sm:px-6 sm:pt-4 lg:px-8">
         <Header credits={creditLabel} user={user} profileName={profileName} darkMode={darkMode} setDarkMode={setDarkMode} cleanCache={cleanCache} notify={notify} signInWithGoogle={signInWithGoogle} signOut={signOut} openGuide={() => { setGuideStep(0); setGuideOpen(true); }} />
 
         <section className="flex-1 py-6">
@@ -876,7 +876,7 @@ const Header = ({
   </header>
 );
 
-const AppShell = ({ children }: { children: React.ReactNode }) => <section className="glass-panel min-h-[620px] rounded-3xl p-3 sm:p-5">{children}</section>;
+const AppShell = ({ children }: { children: React.ReactNode }) => <section className="glass-panel min-h-[calc(100vh-10rem)] rounded-3xl p-3 sm:min-h-[620px] sm:p-5">{children}</section>;
 
 const HomeSection = ({ credits, rewardAd, user, signInWithGoogle, shareApp }: { credits: string; rewardAd: () => void; user: AuthUser | null; signInWithGoogle: () => void; shareApp: (platformName: string) => void }) => (
   <section className="flex min-h-[620px] flex-col justify-between rounded-3xl border border-border/50 bg-gradient-glass p-5 shadow-glass sm:p-8">
