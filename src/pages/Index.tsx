@@ -39,6 +39,7 @@ import {
   Phone,
   PhoneCall,
   PhoneMissed,
+  Pause,
   Play,
   QrCode,
   Radar,
@@ -92,6 +93,7 @@ type VaultFile = { id: string; name: string; size: number; type: string; hidden:
 type ShareMode = "cloud" | "nearby" | null;
 type VaultAuthMethod = "pin" | "pattern" | "biometric";
 type VaultSetupStep = "method" | "create" | "confirm" | "unlock";
+type DownloadJob = { id: string; url: string; name: string; format: string; status: "queued" | "active" | "paused" | "done" | "error"; progress: number; size?: number; error?: string };
 
 const CREDIT_COST: Record<PaidAction, number> = { call: 1, download: 1 };
 const SHARE_STORAGE_KEY = "madar_share_records";
