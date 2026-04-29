@@ -94,6 +94,7 @@ type ShareMode = "cloud" | "nearby" | null;
 type VaultAuthMethod = "pin" | "pattern" | "biometric";
 type VaultSetupStep = "method" | "create" | "confirm" | "unlock";
 type DownloadJob = { id: string; url: string; name: string; format: string; status: "queued" | "active" | "paused" | "done" | "error"; progress: number; size?: number; error?: string };
+type MediaPreview = { title: string; host: string; thumbnail: string; direct: boolean };
 
 const CREDIT_COST: Record<PaidAction, number> = { call: 1, download: 1 };
 const SHARE_STORAGE_KEY = "madar_share_records";
@@ -109,12 +110,6 @@ const navItems: Array<{ id: Section; label: string; icon: typeof PhoneCall }> = 
 ];
 
 const simulatedApps = ["الصور", "الرسائل", "المتصفح", "المعرض", "الملفات", "البريد"];
-
-const downloadedFiles = [
-  { title: "مقطع تعليمي عالي الدقة", type: "فيديو", size: "386 م.ب", source: "يوتيوب", tone: "bg-primary/15" },
-  { title: "ملف صوتي نقي", type: "صوت", size: "12 م.ب", source: "إنستغرام", tone: "bg-accent/15" },
-  { title: "لقطة قصيرة للمعاينة", type: "فيديو", size: "74 م.ب", source: "تيك توك", tone: "bg-warning/15" },
-];
 
 const storageNumber = (key: string, fallback: number) => {
   if (typeof window === "undefined") return fallback;
@@ -198,44 +193,49 @@ const directFileName = (url: string, extension: string) => {
 
 const detectDirectExtension = (url: string) => url.match(/\.([a-z0-9]{2,5})(?:\?|#|$)/i)?.[1]?.toLowerCase();
 
+const mediaThumbnail = (link: string) => {
+  try {
+    const url = new URL(link);
+    const videoId = url.hostname.includes("youtu") ? (url.searchParams.get("v") || url.pathname.split("/").filter(Boolean).pop()) : "";
+    if (videoId) return `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
+  } catch {
+    return "";
+  }
+  return "";
+};
+
+const createMediaPreview = (link: string): MediaPreview | null => {
+  try {
+    const url = new URL(link.trim());
+    const extension = detectDirectExtension(link);
+    const direct = Boolean(extension && ["mp4", "webm", "mov", "mp3", "m4a", "wav", "ogg"].includes(extension));
+    return {
+      title: direct ? directFileName(link, extension || "mp4") : `وسيط مرصود من ${url.hostname.replace(/^www\./, "")}`,
+      host: url.hostname.replace(/^www\./, ""),
+      thumbnail: mediaThumbnail(link),
+      direct,
+    };
+  } catch {
+    return null;
+  }
+};
 
 const detectFormats = (link: string): MediaFormat[] => {
   const normalized = link.toLowerCase();
   if (!normalized.trim()) return [];
+  const directExtension = detectDirectExtension(link);
   if (normalized.includes("audio") || normalized.includes("mp3") || normalized.includes("sound")) {
-    return [{ kind: "صوت", quality: "320kbps", sizeMb: 11, extension: "mp3", icon: FileAudio }];
+    return [{ kind: "صوت", quality: "MP3 Fast", sizeMb: 11, extension: "mp3", icon: FileAudio }, { kind: "صوت", quality: "MP3 Classic", sizeMb: 16, extension: "mp3", icon: FileAudio }];
   }
-  if (normalized.includes("4k") || normalized.includes("2160")) {
-    return [
-      { kind: "فيديو", quality: "2160p", sizeMb: 1840, extension: "mp4", icon: FileVideo },
-      { kind: "فيديو", quality: "1080p", sizeMb: 760, extension: "mp4", icon: FileVideo },
-      { kind: "فيديو", quality: "720p", sizeMb: 382, extension: "mp4", icon: FileVideo },
-      { kind: "صوت", quality: "320kbps", sizeMb: 12, extension: "mp3", icon: FileAudio },
-    ];
-  }
-  if (normalized.includes("1080") || normalized.includes("hd")) {
-    return [
-      { kind: "فيديو", quality: "1080p", sizeMb: 742, extension: "mp4", icon: FileVideo },
-      { kind: "فيديو", quality: "720p", sizeMb: 386, extension: "mp4", icon: FileVideo },
-      { kind: "صوت", quality: "320kbps", sizeMb: 12, extension: "mp3", icon: FileAudio },
-    ];
-  }
-  if (normalized.includes("720") || normalized.includes("story")) {
-    return [
-      { kind: "فيديو", quality: "720p", sizeMb: 318, extension: "mp4", icon: FileVideo },
-      { kind: "صوت", quality: "192kbps", sizeMb: 8, extension: "mp3", icon: FileAudio },
-    ];
-  }
-  if (normalized.includes("reel") || normalized.includes("tiktok") || normalized.includes("short")) {
-    return [
-      { kind: "فيديو", quality: "1080p", sizeMb: 118, extension: "mp4", icon: FileVideo },
-      { kind: "فيديو", quality: "720p", sizeMb: 72, extension: "mp4", icon: FileVideo },
-      { kind: "صوت", quality: "256kbps", sizeMb: 7, extension: "mp3", icon: FileAudio },
-    ];
-  }
+  const baseSize = directExtension ? 42 : normalized.includes("reel") || normalized.includes("short") ? 72 : 186;
   return [
-    { kind: "فيديو", quality: "720p", sizeMb: 244, extension: "mp4", icon: FileVideo },
-    { kind: "صوت", quality: "192kbps", sizeMb: 9, extension: "mp3", icon: FileAudio },
+    { kind: "صوت", quality: "MP3 Fast", sizeMb: 9, extension: "mp3", icon: FileAudio },
+    { kind: "صوت", quality: "MP3 Classic", sizeMb: 14, extension: "mp3", icon: FileAudio },
+    { kind: "فيديو", quality: "144p", sizeMb: Math.max(8, Math.round(baseSize * 0.18)), extension: "mp4", icon: FileVideo },
+    { kind: "فيديو", quality: "240p", sizeMb: Math.max(14, Math.round(baseSize * 0.28)), extension: "mp4", icon: FileVideo },
+    { kind: "فيديو", quality: "360p", sizeMb: Math.max(24, Math.round(baseSize * 0.42)), extension: "mp4", icon: FileVideo },
+    { kind: "فيديو", quality: "MP4 480p Fast", sizeMb: Math.max(36, Math.round(baseSize * 0.62)), extension: "mp4", icon: FileVideo },
+    { kind: "فيديو", quality: "MP4 720p High", sizeMb: Math.max(58, baseSize), extension: "mp4", icon: FileVideo },
   ];
 };
 
