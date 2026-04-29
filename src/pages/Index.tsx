@@ -187,6 +187,17 @@ const downloadDataUrl = (dataUrl: string, fileName: string) => {
   anchor.click();
 };
 
+const directFileName = (url: string, extension: string) => {
+  try {
+    const name = decodeURIComponent(new URL(url).pathname.split("/").filter(Boolean).pop() || "");
+    return name.includes(".") ? name : `madar-download-${Date.now()}.${extension}`;
+  } catch {
+    return `madar-download-${Date.now()}.${extension}`;
+  }
+};
+
+const detectDirectExtension = (url: string) => url.match(/\.([a-z0-9]{2,5})(?:\?|#|$)/i)?.[1]?.toLowerCase();
+
 
 const detectFormats = (link: string): MediaFormat[] => {
   const normalized = link.toLowerCase();
