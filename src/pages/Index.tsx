@@ -1262,6 +1262,8 @@ const FakeCallDashboard = ({
   handleRingtoneUpload,
   customTones,
   timerCountdown,
+  autoStartCall,
+  setAutoStartCall,
   startScheduledCall,
   callFrameRef,
 }: {
@@ -1282,6 +1284,8 @@ const FakeCallDashboard = ({
   handleRingtoneUpload: (event: ChangeEvent<HTMLInputElement>) => void;
   customTones: string[];
   timerCountdown: number | null;
+  autoStartCall: boolean;
+  setAutoStartCall: (value: boolean) => void;
   startScheduledCall: () => void;
   callFrameRef: React.RefObject<HTMLDivElement>;
 }) => (
@@ -1295,6 +1299,10 @@ const FakeCallDashboard = ({
         <span className="flex items-center gap-2"><Timer className="h-5 w-5" /> تفعيل المؤقت</span>
         <span>{timerCountdown === null ? `${callDelay} دقائق` : `${timerCountdown} ثانية`}</span>
       </Button>
+      <div className="flex items-center justify-between rounded-2xl border border-border/50 bg-secondary/30 p-4">
+        <Switch checked={autoStartCall} onCheckedChange={setAutoStartCall} />
+        <span className="font-bold">البدء التلقائي عند انتهاء المؤقت</span>
+      </div>
       {timerCountdown !== null && (
         <div className="rounded-3xl border border-primary/50 bg-primary/10 p-5 text-center shadow-gold animate-fade-in">
           <p className="text-xs font-bold text-muted-foreground">الوقت المتبقي قبل المكالمة</p>
