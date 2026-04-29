@@ -470,11 +470,14 @@ const Index = () => {
     void audio.play().catch(() => undefined);
     window.setTimeout(() => { audio.pause(); audio.currentTime = 0; }, 12000);
     if ("Notification" in window && Notification.permission === "granted") {
-      const notification = new Notification("مكالمة وهمية جاهزة", {
+      const notificationOptions = {
         body: "اضغط لفتح شاشة المكالمة في مدار فوراً.",
         tag: "madar-fake-call",
         requireInteraction: true,
-      });
+        data: { url: `${window.location.origin}/?section=call&instant=1` },
+      };
+      if (navigator.serviceWorker?.ready) void navigator.serviceWorker.ready.then((registration) => registration.showNotification("مكالمة وهمية جاهزة", notificationOptions));
+      const notification = new Notification("مكالمة وهمية جاهزة", notificationOptions);
       notification.onclick = () => {
         window.focus();
         setActiveSection("call");
