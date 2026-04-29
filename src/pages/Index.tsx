@@ -953,6 +953,8 @@ const Index = () => {
                 handleRingtoneUpload={handleRingtoneUpload}
                 customTones={customTones}
                 timerCountdown={timerCountdown}
+                autoStartCall={autoStartCall}
+                setAutoStartCall={setAutoStartCall}
                 startScheduledCall={startScheduledCall}
                 callFrameRef={callFrameRef}
               />
@@ -967,6 +969,7 @@ const Index = () => {
                 setBrowserUrl={setBrowserUrl}
                 selectedFormat={selectedFormat}
                 setSelectedFormat={setSelectedFormat}
+                mediaPreview={mediaPreview}
                 detectedFormats={detectedFormats}
                 qualitiesOpen={qualitiesOpen}
                 setQualitiesOpen={setQualitiesOpen}
