@@ -961,7 +961,12 @@ const Index = () => {
                 setQualitiesOpen={setQualitiesOpen}
                 wifiOnly={wifiOnly}
                 setWifiOnly={setWifiOnly}
+                downloadJobs={downloadJobs}
+                simultaneousDownloads={simultaneousDownloads}
+                setSimultaneousDownloads={setSimultaneousDownloads}
                 startDownload={startDownload}
+                pauseDownload={pauseDownload}
+                resumeDownload={resumeDownload}
                 analyzeClipboard={analyzeClipboard}
                 notify={notify}
               />
