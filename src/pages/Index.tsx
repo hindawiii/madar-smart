@@ -1571,7 +1571,7 @@ const SmartShare = ({
   <div className="space-y-5">
     <SectionTitle icon={Signal} title="الشير العالمي" subtitle="اختر وضع المشاركة، ثم توسّع البطاقة بسلاسة إلى مساحة عمل كاملة." />
     {!shareMode && (
-      <div className="grid min-h-0 grid-cols-2 gap-3 sm:gap-5 lg:min-h-[30rem]">
+        <div className="grid min-h-0 grid-cols-2 gap-2 sm:gap-5 lg:min-h-[30rem]">
         <ShareChoiceCard icon={Cloud} title="المشاركة السحابية" subtitle="كود تنزيل آمن، مدة انتهاء، وسجل ملفات محفوظ للمستخدم." onClick={() => setShareMode("cloud")} />
         <ShareChoiceCard icon={Wifi} title="النقل القريب" subtitle="WebRTC وباركود واقتران يدوي للأجهزة القريبة دون إنترنت." onClick={() => setShareMode("nearby")} />
       </div>
@@ -1621,7 +1621,7 @@ const SmartShare = ({
         </div>
         <label onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); setSharedFile(event.dataTransfer.files?.[0] ?? null); }} className="mb-4 flex min-h-32 cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-primary/60 bg-background/40 p-4 text-center transition-colors hover:bg-secondary/50">
           <FileArchive className="mb-2 h-8 w-8 text-primary" />
-          <span className="font-black">اختيار ملف للنقل القريب</span>
+          <span className="font-black">صندوق الرفع للنقل القريب</span>
           <span className="mt-2 text-xs leading-6 text-muted-foreground">{sharedFile ? `${sharedFile.name} • ${formatFileSize(sharedFile.size)} • جاهز للمعاينة والإرسال` : "اسحب ملفاً هنا أو اضغط لاختياره قبل الإرسال"}</span>
           <input type="file" className="sr-only" onChange={(event) => setSharedFile(event.target.files?.[0] ?? null)} />
         </label>
@@ -1649,6 +1649,7 @@ const SmartShare = ({
                 <Button variant="gold" size="sm" onClick={() => sendToDevice(device.name)}>إرسال</Button>
               </div>
             ))}
+            {!connectedDevices.length && <p className="rounded-xl border border-border/50 bg-secondary/30 p-3 text-sm text-muted-foreground">فعّل الإرسال أو الاستلام لإنشاء قناة WebRTC وإظهار الأجهزة المقترنة.</p>}
           </div>
         </div>
       </div>
