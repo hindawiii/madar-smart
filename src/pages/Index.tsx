@@ -675,7 +675,7 @@ const Index = () => {
       return;
     }
     if (user) {
-      const { data } = await (supabase.from("share_files") as any).select("file_name, storage_path, expires_at").eq("user_id", user.id).eq("retrieval_code", code).maybeSingle();
+      const { data } = await (supabase.from("share_files") as any).select("file_name, storage_path, expires_at").eq("retrieval_code", code).maybeSingle();
       if (data?.storage_path) {
         const { data: signed } = await supabase.storage.from("share-files").createSignedUrl(data.storage_path, 120);
         if (signed?.signedUrl) {
