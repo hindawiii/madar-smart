@@ -264,6 +264,7 @@ const Index = () => {
   const [expiry, setExpiry] = useState("أسبوع واحد");
   const [selectedFormat, setSelectedFormat] = useState<MediaFormat | null>(null);
   const [qualitiesOpen, setQualitiesOpen] = useState(false);
+  const [mediaPreview, setMediaPreview] = useState<MediaPreview | null>(null);
   const [downloadJobs, setDownloadJobs] = useState<DownloadJob[]>([]);
   const [simultaneousDownloads, setSimultaneousDownloads] = useState(true);
   const downloadControllers = useRef<Record<string, AbortController>>({});
@@ -344,6 +345,9 @@ const Index = () => {
   useEffect(() => {
     setSelectedFormat(detectedFormats[0] ?? null);
     setQualitiesOpen(Boolean(detectedFormats.length));
+    const preview = createMediaPreview(detectedLink);
+    setMediaPreview(preview);
+    if (preview) notify("تم رصد وسيط قابل للفحص", "ظهرت نافذة معاينة فورية مع الجودات وخيارات التحميل المتاحة.");
   }, [detectedFormats]);
 
   useEffect(() => {
