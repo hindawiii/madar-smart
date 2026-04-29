@@ -1359,7 +1359,12 @@ const DownloaderHub = ({
   setQualitiesOpen,
   wifiOnly,
   setWifiOnly,
+  downloadJobs,
+  simultaneousDownloads,
+  setSimultaneousDownloads,
   startDownload,
+  pauseDownload,
+  resumeDownload,
   analyzeClipboard,
   notify,
 }: {
@@ -1374,7 +1379,12 @@ const DownloaderHub = ({
   setQualitiesOpen: (value: boolean) => void;
   wifiOnly: boolean;
   setWifiOnly: (value: boolean) => void;
+  downloadJobs: DownloadJob[];
+  simultaneousDownloads: boolean;
+  setSimultaneousDownloads: (value: boolean) => void;
   startDownload: () => void;
+  pauseDownload: (jobId: string) => void;
+  resumeDownload: (job: DownloadJob) => void;
   analyzeClipboard: () => void;
   notify: (title: string, description: string) => void;
 }) => (
