@@ -39,6 +39,7 @@ import {
   Phone,
   PhoneCall,
   PhoneMissed,
+  Pause,
   Play,
   QrCode,
   Radar,
@@ -92,6 +93,7 @@ type VaultFile = { id: string; name: string; size: number; type: string; hidden:
 type ShareMode = "cloud" | "nearby" | null;
 type VaultAuthMethod = "pin" | "pattern" | "biometric";
 type VaultSetupStep = "method" | "create" | "confirm" | "unlock";
+type DownloadJob = { id: string; url: string; name: string; format: string; status: "queued" | "active" | "paused" | "done" | "error"; progress: number; size?: number; error?: string };
 
 const CREDIT_COST: Record<PaidAction, number> = { call: 1, download: 1 };
 const SHARE_STORAGE_KEY = "madar_share_records";
@@ -185,6 +187,17 @@ const downloadDataUrl = (dataUrl: string, fileName: string) => {
   anchor.click();
 };
 
+const directFileName = (url: string, extension: string) => {
+  try {
+    const name = decodeURIComponent(new URL(url).pathname.split("/").filter(Boolean).pop() || "");
+    return name.includes(".") ? name : `madar-download-${Date.now()}.${extension}`;
+  } catch {
+    return `madar-download-${Date.now()}.${extension}`;
+  }
+};
+
+const detectDirectExtension = (url: string) => url.match(/\.([a-z0-9]{2,5})(?:\?|#|$)/i)?.[1]?.toLowerCase();
+
 
 const detectFormats = (link: string): MediaFormat[] => {
   const normalized = link.toLowerCase();
@@ -236,8 +249,8 @@ const Index = () => {
   const [wifiOnly, setWifiOnly] = useState(true);
   const [platform, setPlatform] = useState<Platform>("android");
   const [callStatus, setCallStatus] = useState("لوحة التحكم جاهزة");
-  const [detectedLink, setDetectedLink] = useState("https://youtube.com/watch?v=madar-demo-1080");
-  const [browserUrl, setBrowserUrl] = useState("https://youtube.com");
+  const [detectedLink, setDetectedLink] = useState("");
+  const [browserUrl, setBrowserUrl] = useState("");
   const [callDelay, setCallDelay] = useState("1");
   const [redialInterval, setRedialInterval] = useState("30");
   const [redialRetries, setRedialRetries] = useState("3");
@@ -251,6 +264,9 @@ const Index = () => {
   const [expiry, setExpiry] = useState("أسبوع واحد");
   const [selectedFormat, setSelectedFormat] = useState<MediaFormat | null>(null);
   const [qualitiesOpen, setQualitiesOpen] = useState(false);
+  const [downloadJobs, setDownloadJobs] = useState<DownloadJob[]>([]);
+  const [simultaneousDownloads, setSimultaneousDownloads] = useState(true);
+  const downloadControllers = useRef<Record<string, AbortController>>({});
   const [sharedFile, setSharedFile] = useState<File | null>(null);
   const [shareCode, setShareCode] = useState("");
   const [receiverCode, setReceiverCode] = useState("");
@@ -261,10 +277,7 @@ const Index = () => {
   const [webrtcStatus, setWebrtcStatus] = useState("غير متصل");
   const [peerConnection, setPeerConnection] = useState<RTCPeerConnection | null>(null);
   const dataChannelRef = useRef<RTCDataChannel | null>(null);
-  const [connectedDevices, setConnectedDevices] = useState<ConnectedDevice[]>([
-    { id: "nearby-1", name: "هاتف قريب", status: "جاهز للاقتران" },
-    { id: "nearby-2", name: "حاسوب العمل", status: "تم العثور عليه" },
-  ]);
+  const [connectedDevices, setConnectedDevices] = useState<ConnectedDevice[]>([]);
   const [shareMode, setShareMode] = useState<ShareMode>(null);
   const [vaultUnlocked, setVaultUnlocked] = useState(false);
   const [vaultPin, setVaultPin] = useState(() => window.localStorage.getItem("madar_vault_pin") || "");
@@ -476,18 +489,77 @@ const Index = () => {
       return;
     }
     if (!spendCredit("download", `تم تجهيز جودة ${selectedFormat.quality} للتحميل الفعلي.`)) return;
-    try {
-      const directMedia = /\.(mp4|mp3|webm|m4a|wav|ogg)(\?|$)/i.test(detectedLink);
-      const anchor = document.createElement("a");
-      anchor.href = directMedia ? detectedLink : `data:text/plain;charset=utf-8,${encodeURIComponent(`رابط مرصود بواسطة مدار:\n${detectedLink}\nالجودة: ${selectedFormat.quality}\nملاحظة: المواقع المحمية تحتاج رابط ملف مباشر أو سماح CORS من المصدر.`)}`;
-      anchor.download = directMedia ? `madar-${selectedFormat.quality}.${selectedFormat.extension}` : `madar-media-sniffer-${selectedFormat.quality}.txt`;
-      anchor.rel = "noopener";
-      anchor.click();
-      notify("بدأ التنزيل", directMedia ? "تم تمرير رابط الوسيط المباشر إلى مدير التنزيل." : "تم حفظ تقرير رصد حقيقي للرابط؛ استخدم رابط ملف مباشر لتنزيل الفيديو أو الصوت نفسه.");
-    } catch {
-      notify("تعذر بدء التنزيل", "المصدر يمنع التحميل المباشر من المتصفح؛ جرّب رابط ملف مباشر بصيغة MP4 أو MP3.");
+    const urls = detectedLink.split(/\n|,/).map((item) => item.trim()).filter(Boolean);
+    const createdJobs = urls.map((url, index) => ({
+      id: crypto.randomUUID(),
+      url,
+      name: directFileName(url, detectDirectExtension(url) || selectedFormat.extension),
+      format: `${selectedFormat.kind} ${selectedFormat.quality}`,
+      status: index === 0 || simultaneousDownloads ? "queued" as const : "paused" as const,
+      progress: 0,
+    }));
+    setDownloadJobs((jobs) => [...createdJobs, ...jobs].slice(0, 12));
+    const runner = async (job: DownloadJob) => runDownloadJob(job);
+    if (simultaneousDownloads) void Promise.all(createdJobs.map(runner));
+    else {
+      void (async () => {
+        for (const job of createdJobs) await runner(job);
+      })();
     }
   };
+
+  const runDownloadJob = async (job: DownloadJob) => {
+    const controller = new AbortController();
+    downloadControllers.current[job.id] = controller;
+    setDownloadJobs((jobs) => jobs.map((item) => item.id === job.id ? { ...item, status: "active", progress: Math.max(item.progress, 3), error: undefined } : item));
+    try {
+      const response = await fetch(job.url, { signal: controller.signal, mode: "cors" });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const total = Number(response.headers.get("content-length")) || 0;
+      if (!response.body) {
+        const blob = await response.blob();
+        const objectUrl = URL.createObjectURL(blob);
+        downloadDataUrl(objectUrl, job.name);
+        window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+      } else {
+        const reader = response.body.getReader();
+        const chunks: Uint8Array[] = [];
+        let received = 0;
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (value) {
+            chunks.push(value);
+            received += value.length;
+            setDownloadJobs((jobs) => jobs.map((item) => item.id === job.id ? { ...item, size: total || received, progress: total ? Math.round((received / total) * 100) : Math.min(95, item.progress + 8) } : item));
+          }
+        }
+        const blob = new Blob(chunks.map((chunk) => chunk.slice().buffer));
+        const objectUrl = URL.createObjectURL(blob);
+        downloadDataUrl(objectUrl, job.name);
+        window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+      }
+      setDownloadJobs((jobs) => jobs.map((item) => item.id === job.id ? { ...item, status: "done", progress: 100 } : item));
+      notify("اكتمل التنزيل", `تم حفظ ${job.name} بنجاح.`);
+    } catch (error) {
+      const aborted = error instanceof DOMException && error.name === "AbortError";
+      setDownloadJobs((jobs) => jobs.map((item) => item.id === job.id ? { ...item, status: aborted ? "paused" : "error", error: aborted ? undefined : "المصدر يمنع الجلب المباشر أو لا يدعم CORS" } : item));
+      if (!aborted) {
+        const fallback = document.createElement("a");
+        fallback.href = job.url;
+        fallback.download = job.name;
+        fallback.rel = "noopener";
+        fallback.click();
+        notify("تم تمرير الرابط للمتصفح", "إذا منع المصدر الجلب المباشر، سيحاول المتصفح تنزيل الملف من الرابط الأصلي.");
+      }
+    } finally {
+      delete downloadControllers.current[job.id];
+    }
+  };
+
+  const pauseDownload = (jobId: string) => downloadControllers.current[jobId]?.abort();
+
+  const resumeDownload = (job: DownloadJob) => void runDownloadJob({ ...job, progress: 0, status: "queued" });
 
   const rewardAd = () => {
     notify("بدأ إعلان المكافأة", "بعد 5 ثوانٍ ستضاف 5 أرصدة إضافية إلى حسابك.");
@@ -550,8 +622,7 @@ const Index = () => {
       if (text) setDetectedLink(text);
       notify("تم تحليل الحافظة", text ? "تم إدراج الرابط وفحص الصيغ المتاحة فقط." : "لم يتم العثور على رابط واضح في الحافظة.");
     } catch {
-      setDetectedLink("https://tiktok.com/@madar/video/720");
-      notify("تم استخدام رابط تجريبي", "تعذر قراءة الحافظة، لذلك تم إدراج رابط 720p لاختبار المستشعر.");
+      notify("تعذر قراءة الحافظة", "امنح المتصفح صلاحية قراءة الحافظة أو ألصق رابط الملف المباشر يدوياً.");
     }
   };
 
@@ -595,7 +666,7 @@ const Index = () => {
       return;
     }
     if (user) {
-      const { data } = await (supabase.from("share_files") as any).select("file_name, storage_path").eq("user_id", user.id).eq("retrieval_code", code).maybeSingle();
+      const { data } = await (supabase.from("share_files") as any).select("file_name, storage_path, expires_at").eq("user_id", user.id).eq("retrieval_code", code).maybeSingle();
       if (data?.storage_path) {
         const { data: signed } = await supabase.storage.from("share-files").createSignedUrl(data.storage_path, 120);
         if (signed?.signedUrl) {
@@ -608,7 +679,7 @@ const Index = () => {
         }
       }
     }
-    notify("الكود غير متاح", "تحقق من الكود أو سجّل الدخول بالحساب نفسه على الجهازين لاختبار المشاركة السحابية المحفوظة.");
+    notify("الكود غير متاح", "تحقق من الكود أو سجّل الدخول بالحساب نفسه على الجهازين لتنزيل الملف السحابي بأمان.");
   };
 
   const activateWebRtc = (mode: "send" | "receive") => {
@@ -639,7 +710,7 @@ const Index = () => {
     }
     setPeerConnection(pc);
     setLocalPairCode(code);
-    setConnectedDevices((devices) => devices.map((device, index) => index === 0 ? { ...device, status: "متصل عبر WebRTC" } : device));
+    setConnectedDevices((devices) => [{ id: `rtc-${code}`, name: `جهاز WebRTC ${code}`, status: "متصل عبر WebRTC" }, ...devices]);
     notify("تم تجهيز النقل القريب", `كود الاقتران المحلي هو ${code}.`);
   };
 
@@ -691,7 +762,7 @@ const Index = () => {
     setPinEntry("");
     setPatternEntry("");
     setPendingSecret("");
-    setVaultSetupStep(method === "biometric" ? "confirm" : "create");
+    setVaultSetupStep("create");
   };
 
   const confirmVaultSecret = async () => {
@@ -707,6 +778,12 @@ const Index = () => {
     if (vaultMethod === "biometric") {
       if (!window.PublicKeyCredential) {
         notify("المصادقة الحيوية غير مدعومة", "استخدم PIN أو النمط على هذا المتصفح.");
+        return;
+      }
+      if (vaultSetupStep === "create") {
+        setPendingSecret("biometric");
+        setVaultSetupStep("confirm");
+        notify("أكّد التحقق الحيوي", "اضغط تأكيد مرة ثانية لتفعيل القفل الحيوي بخطوتين.");
         return;
       }
       window.localStorage.setItem(VAULT_BIOMETRIC_KEY, "true");
@@ -886,7 +963,12 @@ const Index = () => {
                 setQualitiesOpen={setQualitiesOpen}
                 wifiOnly={wifiOnly}
                 setWifiOnly={setWifiOnly}
+                downloadJobs={downloadJobs}
+                simultaneousDownloads={simultaneousDownloads}
+                setSimultaneousDownloads={setSimultaneousDownloads}
                 startDownload={startDownload}
+                pauseDownload={pauseDownload}
+                resumeDownload={resumeDownload}
                 analyzeClipboard={analyzeClipboard}
                 notify={notify}
               />
@@ -1279,7 +1361,12 @@ const DownloaderHub = ({
   setQualitiesOpen,
   wifiOnly,
   setWifiOnly,
+  downloadJobs,
+  simultaneousDownloads,
+  setSimultaneousDownloads,
   startDownload,
+  pauseDownload,
+  resumeDownload,
   analyzeClipboard,
   notify,
 }: {
@@ -1294,7 +1381,12 @@ const DownloaderHub = ({
   setQualitiesOpen: (value: boolean) => void;
   wifiOnly: boolean;
   setWifiOnly: (value: boolean) => void;
+  downloadJobs: DownloadJob[];
+  simultaneousDownloads: boolean;
+  setSimultaneousDownloads: (value: boolean) => void;
   startDownload: () => void;
+  pauseDownload: (jobId: string) => void;
+  resumeDownload: (job: DownloadJob) => void;
   analyzeClipboard: () => void;
   notify: (title: string, description: string) => void;
 }) => (
@@ -1374,9 +1466,31 @@ const DownloaderHub = ({
               <Switch checked={wifiOnly} onCheckedChange={setWifiOnly} />
               <span className="font-bold">التنزيل عبر Wi‑Fi فقط</span>
             </div>
+            <div className="mb-4 flex items-center justify-between rounded-xl bg-background/50 p-3">
+              <Switch checked={simultaneousDownloads} onCheckedChange={setSimultaneousDownloads} />
+              <span className="font-bold">{simultaneousDownloads ? "تحميل الكل معاً" : "تحميل ملف واحد تلو الآخر"}</span>
+            </div>
             <Button variant="gold" size="lg" className="w-full" onClick={startDownload}>
               <FileDown className="h-5 w-5" /> تنزيل الصيغة المحددة
             </Button>
+            {!!downloadJobs.length && (
+              <div className="mt-4 space-y-2">
+                {downloadJobs.map((job) => (
+                  <div key={job.id} className="rounded-xl border border-border/50 bg-background/45 p-3">
+                    <div className="flex items-center justify-between gap-2 text-xs">
+                      <span className="truncate font-black">{job.name}</span>
+                      <span className="shrink-0 text-primary">{job.status === "done" ? "مكتمل" : job.status === "paused" ? "متوقف" : job.status === "error" ? "تعذر" : "نشط"}</span>
+                    </div>
+                    <div className="mt-2 h-2 overflow-hidden rounded-full bg-secondary"><span className="block h-full bg-primary transition-all" style={{ width: `${job.progress}%` }} /></div>
+                    {job.error && <p className="mt-2 text-xs text-muted-foreground">{job.error}</p>}
+                    <div className="mt-3 grid grid-cols-2 gap-2">
+                      <Button variant="glass" size="sm" onClick={() => pauseDownload(job.id)} disabled={job.status !== "active"}><Pause className="h-4 w-4" /> إيقاف مؤقت</Button>
+                      <Button variant="gold" size="sm" onClick={() => resumeDownload(job)} disabled={job.status === "active" || job.status === "done"}><Play className="h-4 w-4" /> استئناف</Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </TabsContent>
@@ -1457,7 +1571,7 @@ const SmartShare = ({
   <div className="space-y-5">
     <SectionTitle icon={Signal} title="الشير العالمي" subtitle="اختر وضع المشاركة، ثم توسّع البطاقة بسلاسة إلى مساحة عمل كاملة." />
     {!shareMode && (
-      <div className="grid min-h-0 grid-cols-2 gap-3 sm:gap-5 lg:min-h-[30rem]">
+        <div className="grid min-h-0 grid-cols-2 gap-2 sm:gap-5 lg:min-h-[30rem]">
         <ShareChoiceCard icon={Cloud} title="المشاركة السحابية" subtitle="كود تنزيل آمن، مدة انتهاء، وسجل ملفات محفوظ للمستخدم." onClick={() => setShareMode("cloud")} />
         <ShareChoiceCard icon={Wifi} title="النقل القريب" subtitle="WebRTC وباركود واقتران يدوي للأجهزة القريبة دون إنترنت." onClick={() => setShareMode("nearby")} />
       </div>
@@ -1507,7 +1621,7 @@ const SmartShare = ({
         </div>
         <label onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); setSharedFile(event.dataTransfer.files?.[0] ?? null); }} className="mb-4 flex min-h-32 cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-primary/60 bg-background/40 p-4 text-center transition-colors hover:bg-secondary/50">
           <FileArchive className="mb-2 h-8 w-8 text-primary" />
-          <span className="font-black">اختيار ملف للنقل القريب</span>
+          <span className="font-black">صندوق الرفع للنقل القريب</span>
           <span className="mt-2 text-xs leading-6 text-muted-foreground">{sharedFile ? `${sharedFile.name} • ${formatFileSize(sharedFile.size)} • جاهز للمعاينة والإرسال` : "اسحب ملفاً هنا أو اضغط لاختياره قبل الإرسال"}</span>
           <input type="file" className="sr-only" onChange={(event) => setSharedFile(event.target.files?.[0] ?? null)} />
         </label>
@@ -1535,6 +1649,7 @@ const SmartShare = ({
                 <Button variant="gold" size="sm" onClick={() => sendToDevice(device.name)}>إرسال</Button>
               </div>
             ))}
+            {!connectedDevices.length && <p className="rounded-xl border border-border/50 bg-secondary/30 p-3 text-sm text-muted-foreground">فعّل الإرسال أو الاستلام لإنشاء قناة WebRTC وإظهار الأجهزة المقترنة.</p>}
           </div>
         </div>
       </div>
@@ -1673,7 +1788,7 @@ const PrivacyVault = ({
         <div className="space-y-5">
           <div className="rounded-3xl border border-border/50 bg-gradient-glass p-5 shadow-glass">
             <h3 className="text-2xl font-black">قفل التطبيقات</h3>
-            <p className="mt-2 text-sm leading-7 text-muted-foreground">اختر تطبيقات للحماية ضمن محاكاة مرئية جاهزة للتوسعة عند تحويل التطبيق إلى Capacitor.</p>
+            <p className="mt-2 text-sm leading-7 text-muted-foreground">اختر التطبيقات التي تريد حمايتها داخل مساحة الخصوصية، وتبقى الإعدادات محفوظة على هذا الجهاز.</p>
             <div className="mt-4 grid grid-cols-2 gap-3">
               {simulatedApps.map((appName) => <Button key={appName} variant={lockedApps.includes(appName) ? "gold" : "glass"} onClick={() => toggleAppLock(appName)}><Shield className="h-4 w-4" /> {appName}</Button>)}
             </div>
