@@ -492,18 +492,77 @@ const Index = () => {
       return;
     }
     if (!spendCredit("download", `تم تجهيز جودة ${selectedFormat.quality} للتحميل الفعلي.`)) return;
-    try {
-      const directMedia = /\.(mp4|mp3|webm|m4a|wav|ogg)(\?|$)/i.test(detectedLink);
-      const anchor = document.createElement("a");
-      anchor.href = directMedia ? detectedLink : `data:text/plain;charset=utf-8,${encodeURIComponent(`رابط مرصود بواسطة مدار:\n${detectedLink}\nالجودة: ${selectedFormat.quality}\nملاحظة: المواقع المحمية تحتاج رابط ملف مباشر أو سماح CORS من المصدر.`)}`;
-      anchor.download = directMedia ? `madar-${selectedFormat.quality}.${selectedFormat.extension}` : `madar-media-sniffer-${selectedFormat.quality}.txt`;
-      anchor.rel = "noopener";
-      anchor.click();
-      notify("بدأ التنزيل", directMedia ? "تم تمرير رابط الوسيط المباشر إلى مدير التنزيل." : "تم حفظ تقرير رصد حقيقي للرابط؛ استخدم رابط ملف مباشر لتنزيل الفيديو أو الصوت نفسه.");
-    } catch {
-      notify("تعذر بدء التنزيل", "المصدر يمنع التحميل المباشر من المتصفح؛ جرّب رابط ملف مباشر بصيغة MP4 أو MP3.");
+    const urls = detectedLink.split(/\n|,/).map((item) => item.trim()).filter(Boolean);
+    const createdJobs = urls.map((url, index) => ({
+      id: crypto.randomUUID(),
+      url,
+      name: directFileName(url, detectDirectExtension(url) || selectedFormat.extension),
+      format: `${selectedFormat.kind} ${selectedFormat.quality}`,
+      status: index === 0 || simultaneousDownloads ? "queued" as const : "paused" as const,
+      progress: 0,
+    }));
+    setDownloadJobs((jobs) => [...createdJobs, ...jobs].slice(0, 12));
+    const runner = async (job: DownloadJob) => runDownloadJob(job);
+    if (simultaneousDownloads) void Promise.all(createdJobs.map(runner));
+    else {
+      void (async () => {
+        for (const job of createdJobs) await runner(job);
+      })();
     }
   };
+
+  const runDownloadJob = async (job: DownloadJob) => {
+    const controller = new AbortController();
+    downloadControllers.current[job.id] = controller;
+    setDownloadJobs((jobs) => jobs.map((item) => item.id === job.id ? { ...item, status: "active", progress: Math.max(item.progress, 3), error: undefined } : item));
+    try {
+      const response = await fetch(job.url, { signal: controller.signal, mode: "cors" });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const total = Number(response.headers.get("content-length")) || 0;
+      if (!response.body) {
+        const blob = await response.blob();
+        const objectUrl = URL.createObjectURL(blob);
+        downloadDataUrl(objectUrl, job.name);
+        window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+      } else {
+        const reader = response.body.getReader();
+        const chunks: Uint8Array[] = [];
+        let received = 0;
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (value) {
+            chunks.push(value);
+            received += value.length;
+            setDownloadJobs((jobs) => jobs.map((item) => item.id === job.id ? { ...item, size: total || received, progress: total ? Math.round((received / total) * 100) : Math.min(95, item.progress + 8) } : item));
+          }
+        }
+        const blob = new Blob(chunks);
+        const objectUrl = URL.createObjectURL(blob);
+        downloadDataUrl(objectUrl, job.name);
+        window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+      }
+      setDownloadJobs((jobs) => jobs.map((item) => item.id === job.id ? { ...item, status: "done", progress: 100 } : item));
+      notify("اكتمل التنزيل", `تم حفظ ${job.name} بنجاح.`);
+    } catch (error) {
+      const aborted = error instanceof DOMException && error.name === "AbortError";
+      setDownloadJobs((jobs) => jobs.map((item) => item.id === job.id ? { ...item, status: aborted ? "paused" : "error", error: aborted ? undefined : "المصدر يمنع الجلب المباشر أو لا يدعم CORS" } : item));
+      if (!aborted) {
+        const fallback = document.createElement("a");
+        fallback.href = job.url;
+        fallback.download = job.name;
+        fallback.rel = "noopener";
+        fallback.click();
+        notify("تم تمرير الرابط للمتصفح", "إذا منع المصدر الجلب المباشر، سيحاول المتصفح تنزيل الملف من الرابط الأصلي.");
+      }
+    } finally {
+      delete downloadControllers.current[job.id];
+    }
+  };
+
+  const pauseDownload = (jobId: string) => downloadControllers.current[jobId]?.abort();
+
+  const resumeDownload = (job: DownloadJob) => void runDownloadJob({ ...job, progress: 0, status: "queued" });
 
   const rewardAd = () => {
     notify("بدأ إعلان المكافأة", "بعد 5 ثوانٍ ستضاف 5 أرصدة إضافية إلى حسابك.");
