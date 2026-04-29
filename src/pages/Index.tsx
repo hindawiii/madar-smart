@@ -537,7 +537,7 @@ const Index = () => {
             setDownloadJobs((jobs) => jobs.map((item) => item.id === job.id ? { ...item, size: total || received, progress: total ? Math.round((received / total) * 100) : Math.min(95, item.progress + 8) } : item));
           }
         }
-        const blob = new Blob(chunks);
+        const blob = new Blob(chunks.map((chunk) => chunk.slice().buffer));
         const objectUrl = URL.createObjectURL(blob);
         downloadDataUrl(objectUrl, job.name);
         window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
