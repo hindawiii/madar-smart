@@ -1376,6 +1376,7 @@ const DownloaderHub = ({
   setBrowserUrl,
   selectedFormat,
   setSelectedFormat,
+  mediaPreview,
   detectedFormats,
   qualitiesOpen,
   setQualitiesOpen,
@@ -1396,6 +1397,7 @@ const DownloaderHub = ({
   setBrowserUrl: (value: string) => void;
   selectedFormat: MediaFormat | null;
   setSelectedFormat: (value: MediaFormat) => void;
+  mediaPreview: MediaPreview | null;
   detectedFormats: MediaFormat[];
   qualitiesOpen: boolean;
   setQualitiesOpen: (value: boolean) => void;
@@ -1455,6 +1457,17 @@ const DownloaderHub = ({
               <span className="font-black">مستشعر الوسائط</span>
               <Gauge className="h-5 w-5 text-primary" />
             </div>
+              {mediaPreview && (
+                <div className="mb-3 overflow-hidden rounded-2xl border border-primary/40 bg-background/45 animate-scale-in">
+                  <div className="grid aspect-video place-items-center bg-secondary/50">
+                    {mediaPreview.thumbnail ? <img src={mediaPreview.thumbnail} alt={mediaPreview.title} className="h-full w-full object-cover" /> : <FileVideo className="h-10 w-10 text-primary" />}
+                  </div>
+                  <div className="p-3">
+                    <p className="truncate font-black">{mediaPreview.title}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">{mediaPreview.host} • {mediaPreview.direct ? "رابط مباشر قابل للتنزيل" : "صفحة وسيط تحتاج مصدراً مباشراً عند تقييد المنصة"}</p>
+                  </div>
+                </div>
+              )}
             <Button variant="gold" className="w-full justify-between" onClick={() => setQualitiesOpen(!qualitiesOpen)}>
               <span className="flex items-center gap-2"><Download className="h-4 w-4" /> عرض الجودات المتاحة</span>
               <span>{detectedFormats.length} صيغة</span>
@@ -1516,21 +1529,17 @@ const DownloaderHub = ({
       </TabsContent>
       <TabsContent value="files" className="mt-5">
         <div className="grid gap-4 md:grid-cols-3">
-          {downloadedFiles.map((file) => (
-            <div key={file.title} className="overflow-hidden rounded-2xl border border-border/50 bg-secondary/30">
-              <div className={`h-32 ${file.tone} p-4`}>
-                <FileVideo className="h-8 w-8 text-primary" />
-              </div>
+          {downloadJobs.filter((job) => job.status === "done").map((file) => (
+            <div key={file.id} className="overflow-hidden rounded-2xl border border-border/50 bg-secondary/30">
+              <div className="grid h-32 place-items-center bg-primary/10 p-4"><FileVideo className="h-8 w-8 text-primary" /></div>
               <div className="p-4">
-                <p className="font-black">{file.title}</p>
-                <p className="mt-1 text-sm text-muted-foreground">{file.type} • {file.size} • {file.source}</p>
-                <div className="mt-4 flex gap-2">
-                  <Button variant="glass" size="sm" onClick={() => notify("تم تجهيز المشاركة", "أصبح الملف جاهزاً للإرسال عبر الشير الذكي.")}><Share2 className="h-4 w-4" /> مشاركة</Button>
-                  <Button variant="glass" size="sm" onClick={() => notify("تم حذف الملف", "أُزيل الملف من المعرض المحلي بنجاح.")}><Trash2 className="h-4 w-4" /> حذف</Button>
-                </div>
+                <p className="truncate font-black">{file.name}</p>
+                <p className="mt-1 text-sm text-muted-foreground">{file.format} • {file.size ? formatFileSize(file.size) : "محفوظ"}</p>
+                <Button variant="glass" size="sm" className="mt-4" onClick={() => notify("جاهز للمشاركة", "استخدم قسم الشير لإرسال الملف من جهازك بعد اكتمال التنزيل.")}><Share2 className="h-4 w-4" /> مشاركة</Button>
               </div>
             </div>
           ))}
+          {!downloadJobs.some((job) => job.status === "done") && <p className="rounded-2xl border border-border/50 bg-secondary/30 p-4 text-sm text-muted-foreground">ستظهر هنا الملفات التي اكتمل تنزيلها خلال هذه الجلسة.</p>}
         </div>
       </TabsContent>
     </Tabs>
