@@ -1788,7 +1788,7 @@ const PrivacyVault = ({
         <div className="space-y-5">
           <div className="rounded-3xl border border-border/50 bg-gradient-glass p-5 shadow-glass">
             <h3 className="text-2xl font-black">قفل التطبيقات</h3>
-            <p className="mt-2 text-sm leading-7 text-muted-foreground">اختر تطبيقات للحماية ضمن محاكاة مرئية جاهزة للتوسعة عند تحويل التطبيق إلى Capacitor.</p>
+            <p className="mt-2 text-sm leading-7 text-muted-foreground">اختر التطبيقات التي تريد حمايتها داخل مساحة الخصوصية، وتبقى الإعدادات محفوظة على هذا الجهاز.</p>
             <div className="mt-4 grid grid-cols-2 gap-3">
               {simulatedApps.map((appName) => <Button key={appName} variant={lockedApps.includes(appName) ? "gold" : "glass"} onClick={() => toggleAppLock(appName)}><Shield className="h-4 w-4" /> {appName}</Button>)}
             </div>
