@@ -1464,9 +1464,31 @@ const DownloaderHub = ({
               <Switch checked={wifiOnly} onCheckedChange={setWifiOnly} />
               <span className="font-bold">التنزيل عبر Wi‑Fi فقط</span>
             </div>
+            <div className="mb-4 flex items-center justify-between rounded-xl bg-background/50 p-3">
+              <Switch checked={simultaneousDownloads} onCheckedChange={setSimultaneousDownloads} />
+              <span className="font-bold">{simultaneousDownloads ? "تحميل الكل معاً" : "تحميل ملف واحد تلو الآخر"}</span>
+            </div>
             <Button variant="gold" size="lg" className="w-full" onClick={startDownload}>
               <FileDown className="h-5 w-5" /> تنزيل الصيغة المحددة
             </Button>
+            {!!downloadJobs.length && (
+              <div className="mt-4 space-y-2">
+                {downloadJobs.map((job) => (
+                  <div key={job.id} className="rounded-xl border border-border/50 bg-background/45 p-3">
+                    <div className="flex items-center justify-between gap-2 text-xs">
+                      <span className="truncate font-black">{job.name}</span>
+                      <span className="shrink-0 text-primary">{job.status === "done" ? "مكتمل" : job.status === "paused" ? "متوقف" : job.status === "error" ? "تعذر" : "نشط"}</span>
+                    </div>
+                    <div className="mt-2 h-2 overflow-hidden rounded-full bg-secondary"><span className="block h-full bg-primary transition-all" style={{ width: `${job.progress}%` }} /></div>
+                    {job.error && <p className="mt-2 text-xs text-muted-foreground">{job.error}</p>}
+                    <div className="mt-3 grid grid-cols-2 gap-2">
+                      <Button variant="glass" size="sm" onClick={() => pauseDownload(job.id)} disabled={job.status !== "active"}><Pause className="h-4 w-4" /> إيقاف مؤقت</Button>
+                      <Button variant="gold" size="sm" onClick={() => resumeDownload(job)} disabled={job.status === "active" || job.status === "done"}><Play className="h-4 w-4" /> استئناف</Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </TabsContent>
