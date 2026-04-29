@@ -249,8 +249,8 @@ const Index = () => {
   const [wifiOnly, setWifiOnly] = useState(true);
   const [platform, setPlatform] = useState<Platform>("android");
   const [callStatus, setCallStatus] = useState("لوحة التحكم جاهزة");
-  const [detectedLink, setDetectedLink] = useState("https://youtube.com/watch?v=madar-demo-1080");
-  const [browserUrl, setBrowserUrl] = useState("https://youtube.com");
+  const [detectedLink, setDetectedLink] = useState("");
+  const [browserUrl, setBrowserUrl] = useState("");
   const [callDelay, setCallDelay] = useState("1");
   const [redialInterval, setRedialInterval] = useState("30");
   const [redialRetries, setRedialRetries] = useState("3");
@@ -277,10 +277,7 @@ const Index = () => {
   const [webrtcStatus, setWebrtcStatus] = useState("غير متصل");
   const [peerConnection, setPeerConnection] = useState<RTCPeerConnection | null>(null);
   const dataChannelRef = useRef<RTCDataChannel | null>(null);
-  const [connectedDevices, setConnectedDevices] = useState<ConnectedDevice[]>([
-    { id: "nearby-1", name: "هاتف قريب", status: "جاهز للاقتران" },
-    { id: "nearby-2", name: "حاسوب العمل", status: "تم العثور عليه" },
-  ]);
+  const [connectedDevices, setConnectedDevices] = useState<ConnectedDevice[]>([]);
   const [shareMode, setShareMode] = useState<ShareMode>(null);
   const [vaultUnlocked, setVaultUnlocked] = useState(false);
   const [vaultPin, setVaultPin] = useState(() => window.localStorage.getItem("madar_vault_pin") || "");
