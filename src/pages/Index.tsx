@@ -94,6 +94,7 @@ type ShareMode = "cloud" | "nearby" | null;
 type VaultAuthMethod = "pin" | "pattern" | "biometric";
 type VaultSetupStep = "method" | "create" | "confirm" | "unlock";
 type DownloadJob = { id: string; url: string; name: string; format: string; status: "queued" | "active" | "paused" | "done" | "error"; progress: number; size?: number; error?: string };
+type MediaPreview = { title: string; host: string; thumbnail: string; direct: boolean };
 
 const CREDIT_COST: Record<PaidAction, number> = { call: 1, download: 1 };
 const SHARE_STORAGE_KEY = "madar_share_records";
@@ -109,12 +110,6 @@ const navItems: Array<{ id: Section; label: string; icon: typeof PhoneCall }> = 
 ];
 
 const simulatedApps = ["الصور", "الرسائل", "المتصفح", "المعرض", "الملفات", "البريد"];
-
-const downloadedFiles = [
-  { title: "مقطع تعليمي عالي الدقة", type: "فيديو", size: "386 م.ب", source: "يوتيوب", tone: "bg-primary/15" },
-  { title: "ملف صوتي نقي", type: "صوت", size: "12 م.ب", source: "إنستغرام", tone: "bg-accent/15" },
-  { title: "لقطة قصيرة للمعاينة", type: "فيديو", size: "74 م.ب", source: "تيك توك", tone: "bg-warning/15" },
-];
 
 const storageNumber = (key: string, fallback: number) => {
   if (typeof window === "undefined") return fallback;
@@ -198,44 +193,49 @@ const directFileName = (url: string, extension: string) => {
 
 const detectDirectExtension = (url: string) => url.match(/\.([a-z0-9]{2,5})(?:\?|#|$)/i)?.[1]?.toLowerCase();
 
+const mediaThumbnail = (link: string) => {
+  try {
+    const url = new URL(link);
+    const videoId = url.hostname.includes("youtu") ? (url.searchParams.get("v") || url.pathname.split("/").filter(Boolean).pop()) : "";
+    if (videoId) return `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
+  } catch {
+    return "";
+  }
+  return "";
+};
+
+const createMediaPreview = (link: string): MediaPreview | null => {
+  try {
+    const url = new URL(link.trim());
+    const extension = detectDirectExtension(link);
+    const direct = Boolean(extension && ["mp4", "webm", "mov", "mp3", "m4a", "wav", "ogg"].includes(extension));
+    return {
+      title: direct ? directFileName(link, extension || "mp4") : `وسيط مرصود من ${url.hostname.replace(/^www\./, "")}`,
+      host: url.hostname.replace(/^www\./, ""),
+      thumbnail: mediaThumbnail(link),
+      direct,
+    };
+  } catch {
+    return null;
+  }
+};
 
 const detectFormats = (link: string): MediaFormat[] => {
   const normalized = link.toLowerCase();
   if (!normalized.trim()) return [];
+  const directExtension = detectDirectExtension(link);
   if (normalized.includes("audio") || normalized.includes("mp3") || normalized.includes("sound")) {
-    return [{ kind: "صوت", quality: "320kbps", sizeMb: 11, extension: "mp3", icon: FileAudio }];
+    return [{ kind: "صوت", quality: "MP3 Fast", sizeMb: 11, extension: "mp3", icon: FileAudio }, { kind: "صوت", quality: "MP3 Classic", sizeMb: 16, extension: "mp3", icon: FileAudio }];
   }
-  if (normalized.includes("4k") || normalized.includes("2160")) {
-    return [
-      { kind: "فيديو", quality: "2160p", sizeMb: 1840, extension: "mp4", icon: FileVideo },
-      { kind: "فيديو", quality: "1080p", sizeMb: 760, extension: "mp4", icon: FileVideo },
-      { kind: "فيديو", quality: "720p", sizeMb: 382, extension: "mp4", icon: FileVideo },
-      { kind: "صوت", quality: "320kbps", sizeMb: 12, extension: "mp3", icon: FileAudio },
-    ];
-  }
-  if (normalized.includes("1080") || normalized.includes("hd")) {
-    return [
-      { kind: "فيديو", quality: "1080p", sizeMb: 742, extension: "mp4", icon: FileVideo },
-      { kind: "فيديو", quality: "720p", sizeMb: 386, extension: "mp4", icon: FileVideo },
-      { kind: "صوت", quality: "320kbps", sizeMb: 12, extension: "mp3", icon: FileAudio },
-    ];
-  }
-  if (normalized.includes("720") || normalized.includes("story")) {
-    return [
-      { kind: "فيديو", quality: "720p", sizeMb: 318, extension: "mp4", icon: FileVideo },
-      { kind: "صوت", quality: "192kbps", sizeMb: 8, extension: "mp3", icon: FileAudio },
-    ];
-  }
-  if (normalized.includes("reel") || normalized.includes("tiktok") || normalized.includes("short")) {
-    return [
-      { kind: "فيديو", quality: "1080p", sizeMb: 118, extension: "mp4", icon: FileVideo },
-      { kind: "فيديو", quality: "720p", sizeMb: 72, extension: "mp4", icon: FileVideo },
-      { kind: "صوت", quality: "256kbps", sizeMb: 7, extension: "mp3", icon: FileAudio },
-    ];
-  }
+  const baseSize = directExtension ? 42 : normalized.includes("reel") || normalized.includes("short") ? 72 : 186;
   return [
-    { kind: "فيديو", quality: "720p", sizeMb: 244, extension: "mp4", icon: FileVideo },
-    { kind: "صوت", quality: "192kbps", sizeMb: 9, extension: "mp3", icon: FileAudio },
+    { kind: "صوت", quality: "MP3 Fast", sizeMb: 9, extension: "mp3", icon: FileAudio },
+    { kind: "صوت", quality: "MP3 Classic", sizeMb: 14, extension: "mp3", icon: FileAudio },
+    { kind: "فيديو", quality: "144p", sizeMb: Math.max(8, Math.round(baseSize * 0.18)), extension: "mp4", icon: FileVideo },
+    { kind: "فيديو", quality: "240p", sizeMb: Math.max(14, Math.round(baseSize * 0.28)), extension: "mp4", icon: FileVideo },
+    { kind: "فيديو", quality: "360p", sizeMb: Math.max(24, Math.round(baseSize * 0.42)), extension: "mp4", icon: FileVideo },
+    { kind: "فيديو", quality: "MP4 480p Fast", sizeMb: Math.max(36, Math.round(baseSize * 0.62)), extension: "mp4", icon: FileVideo },
+    { kind: "فيديو", quality: "MP4 720p High", sizeMb: Math.max(58, baseSize), extension: "mp4", icon: FileVideo },
   ];
 };
 
@@ -254,6 +254,7 @@ const Index = () => {
   const [callDelay, setCallDelay] = useState("1");
   const [redialInterval, setRedialInterval] = useState("30");
   const [redialRetries, setRedialRetries] = useState("3");
+  const [autoStartCall, setAutoStartCall] = useState(true);
   const [ringtone, setRingtone] = useState("نغمة النظام الهادئة");
   const [customRingtone, setCustomRingtone] = useState("");
   const [customTones, setCustomTones] = useState<string[]>([]);
@@ -264,6 +265,7 @@ const Index = () => {
   const [expiry, setExpiry] = useState("أسبوع واحد");
   const [selectedFormat, setSelectedFormat] = useState<MediaFormat | null>(null);
   const [qualitiesOpen, setQualitiesOpen] = useState(false);
+  const [mediaPreview, setMediaPreview] = useState<MediaPreview | null>(null);
   const [downloadJobs, setDownloadJobs] = useState<DownloadJob[]>([]);
   const [simultaneousDownloads, setSimultaneousDownloads] = useState(true);
   const downloadControllers = useRef<Record<string, AbortController>>({});
@@ -344,6 +346,9 @@ const Index = () => {
   useEffect(() => {
     setSelectedFormat(detectedFormats[0] ?? null);
     setQualitiesOpen(Boolean(detectedFormats.length));
+    const preview = createMediaPreview(detectedLink);
+    setMediaPreview(preview);
+    if (preview) notify("تم رصد وسيط قابل للفحص", "ظهرت نافذة معاينة فورية مع الجودات وخيارات التحميل المتاحة.");
   }, [detectedFormats]);
 
   useEffect(() => {
@@ -460,12 +465,19 @@ const Index = () => {
     setActiveSection("call");
     setCallStatus("انتهى المؤقت — المكالمة الوهمية جاهزة الآن بملء الشاشة");
     navigator.vibrate?.([260, 90, 260, 90, 420]);
+    const audio = new Audio("data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA=");
+    audio.loop = true;
+    void audio.play().catch(() => undefined);
+    window.setTimeout(() => { audio.pause(); audio.currentTime = 0; }, 12000);
     if ("Notification" in window && Notification.permission === "granted") {
-      const notification = new Notification("مكالمة وهمية جاهزة", {
+      const notificationOptions = {
         body: "اضغط لفتح شاشة المكالمة في مدار فوراً.",
         tag: "madar-fake-call",
         requireInteraction: true,
-      });
+        data: { url: `${window.location.origin}/?section=call&instant=1` },
+      };
+      if (navigator.serviceWorker?.ready) void navigator.serviceWorker.ready.then((registration) => registration.showNotification("مكالمة وهمية جاهزة", notificationOptions));
+      const notification = new Notification("مكالمة وهمية جاهزة", notificationOptions);
       notification.onclick = () => {
         window.focus();
         setActiveSection("call");
@@ -474,7 +486,7 @@ const Index = () => {
         void target.requestFullscreen?.();
       };
     }
-    void startCall(true);
+    if (autoStartCall) void startCall(true);
   };
 
   const declineCall = () => {
@@ -666,7 +678,7 @@ const Index = () => {
       return;
     }
     if (user) {
-      const { data } = await (supabase.from("share_files") as any).select("file_name, storage_path, expires_at").eq("user_id", user.id).eq("retrieval_code", code).maybeSingle();
+      const { data } = await (supabase.from("share_files") as any).select("file_name, storage_path, expires_at").eq("retrieval_code", code).maybeSingle();
       if (data?.storage_path) {
         const { data: signed } = await supabase.storage.from("share-files").createSignedUrl(data.storage_path, 120);
         if (signed?.signedUrl) {
@@ -944,6 +956,8 @@ const Index = () => {
                 handleRingtoneUpload={handleRingtoneUpload}
                 customTones={customTones}
                 timerCountdown={timerCountdown}
+                autoStartCall={autoStartCall}
+                setAutoStartCall={setAutoStartCall}
                 startScheduledCall={startScheduledCall}
                 callFrameRef={callFrameRef}
               />
@@ -958,6 +972,7 @@ const Index = () => {
                 setBrowserUrl={setBrowserUrl}
                 selectedFormat={selectedFormat}
                 setSelectedFormat={setSelectedFormat}
+                mediaPreview={mediaPreview}
                 detectedFormats={detectedFormats}
                 qualitiesOpen={qualitiesOpen}
                 setQualitiesOpen={setQualitiesOpen}
@@ -1250,6 +1265,8 @@ const FakeCallDashboard = ({
   handleRingtoneUpload,
   customTones,
   timerCountdown,
+  autoStartCall,
+  setAutoStartCall,
   startScheduledCall,
   callFrameRef,
 }: {
@@ -1270,6 +1287,8 @@ const FakeCallDashboard = ({
   handleRingtoneUpload: (event: ChangeEvent<HTMLInputElement>) => void;
   customTones: string[];
   timerCountdown: number | null;
+  autoStartCall: boolean;
+  setAutoStartCall: (value: boolean) => void;
   startScheduledCall: () => void;
   callFrameRef: React.RefObject<HTMLDivElement>;
 }) => (
@@ -1283,6 +1302,10 @@ const FakeCallDashboard = ({
         <span className="flex items-center gap-2"><Timer className="h-5 w-5" /> تفعيل المؤقت</span>
         <span>{timerCountdown === null ? `${callDelay} دقائق` : `${timerCountdown} ثانية`}</span>
       </Button>
+      <div className="flex items-center justify-between rounded-2xl border border-border/50 bg-secondary/30 p-4">
+        <Switch checked={autoStartCall} onCheckedChange={setAutoStartCall} />
+        <span className="font-bold">البدء التلقائي عند انتهاء المؤقت</span>
+      </div>
       {timerCountdown !== null && (
         <div className="rounded-3xl border border-primary/50 bg-primary/10 p-5 text-center shadow-gold animate-fade-in">
           <p className="text-xs font-bold text-muted-foreground">الوقت المتبقي قبل المكالمة</p>
@@ -1356,6 +1379,7 @@ const DownloaderHub = ({
   setBrowserUrl,
   selectedFormat,
   setSelectedFormat,
+  mediaPreview,
   detectedFormats,
   qualitiesOpen,
   setQualitiesOpen,
@@ -1376,6 +1400,7 @@ const DownloaderHub = ({
   setBrowserUrl: (value: string) => void;
   selectedFormat: MediaFormat | null;
   setSelectedFormat: (value: MediaFormat) => void;
+  mediaPreview: MediaPreview | null;
   detectedFormats: MediaFormat[];
   qualitiesOpen: boolean;
   setQualitiesOpen: (value: boolean) => void;
@@ -1435,6 +1460,17 @@ const DownloaderHub = ({
               <span className="font-black">مستشعر الوسائط</span>
               <Gauge className="h-5 w-5 text-primary" />
             </div>
+              {mediaPreview && (
+                <div className="mb-3 overflow-hidden rounded-2xl border border-primary/40 bg-background/45 animate-scale-in">
+                  <div className="grid aspect-video place-items-center bg-secondary/50">
+                    {mediaPreview.thumbnail ? <img src={mediaPreview.thumbnail} alt={mediaPreview.title} className="h-full w-full object-cover" /> : <FileVideo className="h-10 w-10 text-primary" />}
+                  </div>
+                  <div className="p-3">
+                    <p className="truncate font-black">{mediaPreview.title}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">{mediaPreview.host} • {mediaPreview.direct ? "رابط مباشر قابل للتنزيل" : "صفحة وسيط تحتاج مصدراً مباشراً عند تقييد المنصة"}</p>
+                  </div>
+                </div>
+              )}
             <Button variant="gold" className="w-full justify-between" onClick={() => setQualitiesOpen(!qualitiesOpen)}>
               <span className="flex items-center gap-2"><Download className="h-4 w-4" /> عرض الجودات المتاحة</span>
               <span>{detectedFormats.length} صيغة</span>
@@ -1496,21 +1532,17 @@ const DownloaderHub = ({
       </TabsContent>
       <TabsContent value="files" className="mt-5">
         <div className="grid gap-4 md:grid-cols-3">
-          {downloadedFiles.map((file) => (
-            <div key={file.title} className="overflow-hidden rounded-2xl border border-border/50 bg-secondary/30">
-              <div className={`h-32 ${file.tone} p-4`}>
-                <FileVideo className="h-8 w-8 text-primary" />
-              </div>
+          {downloadJobs.filter((job) => job.status === "done").map((file) => (
+            <div key={file.id} className="overflow-hidden rounded-2xl border border-border/50 bg-secondary/30">
+              <div className="grid h-32 place-items-center bg-primary/10 p-4"><FileVideo className="h-8 w-8 text-primary" /></div>
               <div className="p-4">
-                <p className="font-black">{file.title}</p>
-                <p className="mt-1 text-sm text-muted-foreground">{file.type} • {file.size} • {file.source}</p>
-                <div className="mt-4 flex gap-2">
-                  <Button variant="glass" size="sm" onClick={() => notify("تم تجهيز المشاركة", "أصبح الملف جاهزاً للإرسال عبر الشير الذكي.")}><Share2 className="h-4 w-4" /> مشاركة</Button>
-                  <Button variant="glass" size="sm" onClick={() => notify("تم حذف الملف", "أُزيل الملف من المعرض المحلي بنجاح.")}><Trash2 className="h-4 w-4" /> حذف</Button>
-                </div>
+                <p className="truncate font-black">{file.name}</p>
+                <p className="mt-1 text-sm text-muted-foreground">{file.format} • {file.size ? formatFileSize(file.size) : "محفوظ"}</p>
+                <Button variant="glass" size="sm" className="mt-4" onClick={() => notify("جاهز للمشاركة", "استخدم قسم الشير لإرسال الملف من جهازك بعد اكتمال التنزيل.")}><Share2 className="h-4 w-4" /> مشاركة</Button>
               </div>
             </div>
           ))}
+          {!downloadJobs.some((job) => job.status === "done") && <p className="rounded-2xl border border-border/50 bg-secondary/30 p-4 text-sm text-muted-foreground">ستظهر هنا الملفات التي اكتمل تنزيلها خلال هذه الجلسة.</p>}
         </div>
       </TabsContent>
     </Tabs>
