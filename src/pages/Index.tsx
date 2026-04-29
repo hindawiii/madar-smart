@@ -264,6 +264,9 @@ const Index = () => {
   const [expiry, setExpiry] = useState("أسبوع واحد");
   const [selectedFormat, setSelectedFormat] = useState<MediaFormat | null>(null);
   const [qualitiesOpen, setQualitiesOpen] = useState(false);
+  const [downloadJobs, setDownloadJobs] = useState<DownloadJob[]>([]);
+  const [simultaneousDownloads, setSimultaneousDownloads] = useState(true);
+  const downloadControllers = useRef<Record<string, AbortController>>({});
   const [sharedFile, setSharedFile] = useState<File | null>(null);
   const [shareCode, setShareCode] = useState("");
   const [receiverCode, setReceiverCode] = useState("");
