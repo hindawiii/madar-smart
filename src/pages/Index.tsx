@@ -254,6 +254,7 @@ const Index = () => {
   const [callDelay, setCallDelay] = useState("1");
   const [redialInterval, setRedialInterval] = useState("30");
   const [redialRetries, setRedialRetries] = useState("3");
+  const [autoStartCall, setAutoStartCall] = useState(true);
   const [ringtone, setRingtone] = useState("نغمة النظام الهادئة");
   const [customRingtone, setCustomRingtone] = useState("");
   const [customTones, setCustomTones] = useState<string[]>([]);
@@ -464,6 +465,10 @@ const Index = () => {
     setActiveSection("call");
     setCallStatus("انتهى المؤقت — المكالمة الوهمية جاهزة الآن بملء الشاشة");
     navigator.vibrate?.([260, 90, 260, 90, 420]);
+    const audio = new Audio("data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA=");
+    audio.loop = true;
+    void audio.play().catch(() => undefined);
+    window.setTimeout(() => { audio.pause(); audio.currentTime = 0; }, 12000);
     if ("Notification" in window && Notification.permission === "granted") {
       const notification = new Notification("مكالمة وهمية جاهزة", {
         body: "اضغط لفتح شاشة المكالمة في مدار فوراً.",
@@ -478,7 +483,7 @@ const Index = () => {
         void target.requestFullscreen?.();
       };
     }
-    void startCall(true);
+    if (autoStartCall) void startCall(true);
   };
 
   const declineCall = () => {
