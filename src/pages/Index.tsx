@@ -766,7 +766,7 @@ const Index = () => {
     setPinEntry("");
     setPatternEntry("");
     setPendingSecret("");
-    setVaultSetupStep(method === "biometric" ? "confirm" : "create");
+    setVaultSetupStep("create");
   };
 
   const confirmVaultSecret = async () => {
@@ -782,6 +782,12 @@ const Index = () => {
     if (vaultMethod === "biometric") {
       if (!window.PublicKeyCredential) {
         notify("المصادقة الحيوية غير مدعومة", "استخدم PIN أو النمط على هذا المتصفح.");
+        return;
+      }
+      if (vaultSetupStep === "create") {
+        setPendingSecret("biometric");
+        setVaultSetupStep("confirm");
+        notify("أكّد التحقق الحيوي", "اضغط تأكيد مرة ثانية لتفعيل القفل الحيوي بخطوتين.");
         return;
       }
       window.localStorage.setItem(VAULT_BIOMETRIC_KEY, "true");
