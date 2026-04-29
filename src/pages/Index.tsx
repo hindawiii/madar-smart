@@ -710,7 +710,7 @@ const Index = () => {
     }
     setPeerConnection(pc);
     setLocalPairCode(code);
-    setConnectedDevices((devices) => devices.map((device, index) => index === 0 ? { ...device, status: "متصل عبر WebRTC" } : device));
+    setConnectedDevices((devices) => [{ id: `rtc-${code}`, name: `جهاز WebRTC ${code}`, status: "متصل عبر WebRTC" }, ...devices]);
     notify("تم تجهيز النقل القريب", `كود الاقتران المحلي هو ${code}.`);
   };
 
