@@ -670,7 +670,7 @@ const Index = () => {
       return;
     }
     if (user) {
-      const { data } = await (supabase.from("share_files") as any).select("file_name, storage_path").eq("user_id", user.id).eq("retrieval_code", code).maybeSingle();
+      const { data } = await (supabase.from("share_files") as any).select("file_name, storage_path, expires_at").eq("user_id", user.id).eq("retrieval_code", code).maybeSingle();
       if (data?.storage_path) {
         const { data: signed } = await supabase.storage.from("share-files").createSignedUrl(data.storage_path, 120);
         if (signed?.signedUrl) {
@@ -683,7 +683,7 @@ const Index = () => {
         }
       }
     }
-    notify("الكود غير متاح", "تحقق من الكود أو سجّل الدخول بالحساب نفسه على الجهازين لاختبار المشاركة السحابية المحفوظة.");
+    notify("الكود غير متاح", "تحقق من الكود أو سجّل الدخول بالحساب نفسه على الجهازين لتنزيل الملف السحابي بأمان.");
   };
 
   const activateWebRtc = (mode: "send" | "receive") => {
